@@ -547,8 +547,20 @@ The project includes GitHub Actions workflow (`.github/workflows/ci.yml`) that:
 ## 🤝 Acknowledgments
 
 - **Kifiya AI Mastery 10 Academy** for the structured learning framework
-- **Dataset Providers** for the Xente transaction dataset
+- **Dataset Providers** for the Xente transaction dataset (available on Kaggle)
 - **Open Source Community** for MLflow, FastAPI, and other tools
+
+---
+
+## ⚠️ Data Privacy Notice
+
+**Data files are not included in this repository** for privacy and size reasons:
+- Raw data files are in `.gitignore` (not tracked by Git)
+- Processed data files are in `.gitignore` (not tracked by Git)
+- Model files are in `.gitignore` (not tracked by Git)
+- MLflow runs are in `.gitignore` (not tracked by Git)
+
+**Users must download the dataset separately** from Kaggle and set up the data directory structure as described in the Dataset section above.
 
 ---
 
