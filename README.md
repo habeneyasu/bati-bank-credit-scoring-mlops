@@ -336,53 +336,376 @@ print(final['is_high_risk'].value_counts())  # Target distribution
 
 ### Task 5: Model Training and Tracking
 
-**Objective**: Train multiple models with experiment tracking and hyperparameter tuning.
+**Objective**: Develop a structured model training process with experiment tracking, model versioning, and unit testing.
 
-**Key Components**:
+**Challenge Requirement**: Implement explicit training code with reproducible train/test split, at least two models, hyperparameter search, MLflow experiment logging, metric calculations, and at least two unit tests.
 
-1. **Data Splitting**: Train/test split with stratification
-   ```python
-   from src.data_splitting import DataSplitter
-   splitter = DataSplitter(test_size=0.2, random_state=42, stratify=True)
-   X_train, X_test, y_train, y_test = splitter.split_data(df, target_col='is_high_risk')
-   ```
+#### Step 1: Reproducible Train/Test Split
 
-2. **Model Training**: Multiple algorithms (Logistic Regression, Decision Tree, Random Forest, XGBoost)
-   ```python
-   from src.model_training import train_models
-   models, metrics = train_models(X_train, y_train, X_test, y_test)
-   ```
+**Implementation**: `src/data_splitting.py` - Creates reproducible train/test split with `random_state=42`.
 
-3. **Hyperparameter Tuning**: Grid Search and Random Search
-   ```python
-   from src.hyperparameter_tuning import HyperparameterTuner
-   tuner = HyperparameterTuner(search_method='grid', cv=5)
-   best_model = tuner.tune_model(X_train, y_train, model_type='random_forest')
-   ```
+**Concrete Implementation**:
+```python
+from src.data_splitting import DataSplitter
+import pandas as pd
 
-4. **MLflow Tracking**: Experiment tracking, metrics logging, model registry
-   ```python
-   from src.mlflow_tracking import MLflowTracker
-   tracker = MLflowTracker(experiment_name="credit_scoring")
-   tracker.log_model_training(model, X_train, y_train, X_test, y_test, ...)
-   ```
+# Load processed data with target
+df = pd.read_csv('data/processed/processed_data_with_target.csv')
 
-**Evaluation Metrics**: Accuracy, Precision, Recall, F1 Score, ROC-AUC, PR-AUC
+# Create reproducible split with random_state=42
+splitter = DataSplitter(
+    test_size=0.2,        # 80% train, 20% test
+    random_state=42,      # Ensures reproducibility
+    stratify=True         # Maintains class distribution
+)
 
-**Files**: 
-- `src/model_training.py`
-- `src/hyperparameter_tuning.py`
-- `src/mlflow_tracking.py`
-- `examples/train_with_mlflow.py`
-- `examples/tune_with_mlflow.py`
+# Split data
+X_train, X_test, y_train, y_test = splitter.split_data(
+    df, 
+    target_col='is_high_risk'
+)
 
-**Documentation**: `docs/mlflow_usage.md`
+# Save splits for reproducibility
+splitter.save_splits('data/processed/splits', X_train, X_test, y_train, y_test)
+```
 
-**View Experiments**:
+**What it does**:
+- Uses `random_state=42` for reproducibility
+- Stratified split maintains class distribution
+- Saves splits to disk for consistent training
+
+**Run**: `python examples/prepare_data_splits.py` → Creates `data/processed/splits/X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`
+
+#### Step 2: Train At Least Two Models
+
+**Implementation**: `src/model_training.py` - Trains multiple models (Logistic Regression, Decision Tree, Random Forest, XGBoost).
+
+**Concrete Implementation**:
+```python
+from src.model_training import train_models, ModelTrainer
+import pandas as pd
+
+# Load data splits
+X_train = pd.read_csv('data/processed/splits/X_train.csv')
+X_test = pd.read_csv('data/processed/splits/X_test.csv')
+y_train = pd.read_csv('data/processed/splits/y_train.csv')['is_high_risk']
+y_test = pd.read_csv('data/processed/splits/y_test.csv')['is_high_risk']
+
+# Train at least 2 models (actually trains 4)
+models, metrics = train_models(
+    X_train, y_train, X_test, y_test,
+    model_names=['logistic_regression', 'random_forest'],  # At least 2 models
+    random_state=42  # Reproducibility
+)
+
+# Models trained:
+# 1. Logistic Regression
+# 2. Random Forest
+# (Also supports: Decision Tree, XGBoost, LightGBM)
+```
+
+**What it does**:
+- Trains **Logistic Regression** model
+- Trains **Random Forest** model
+- Calculates evaluation metrics for each model
+- Returns trained models and metrics dictionary
+
+**Run**: `python examples/train_models.py` → Trains models and saves to `models/` directory
+
+#### Step 3: Hyperparameter Search (Grid Search / Random Search)
+
+**Implementation**: `src/hyperparameter_tuning.py` - Performs Grid Search and Random Search.
+
+**Concrete Implementation**:
+```python
+from src.hyperparameter_tuning import HyperparameterTuner
+import pandas as pd
+
+# Load training data
+X_train = pd.read_csv('data/processed/splits/X_train.csv')
+y_train = pd.read_csv('data/processed/splits/y_train.csv')['is_high_risk']
+
+# Grid Search hyperparameter tuning
+tuner_grid = HyperparameterTuner(
+    search_method='grid',  # Grid Search
+    cv=5,                  # 5-fold cross-validation
+    scoring='roc_auc',     # Metric to optimize
+    random_state=42
+)
+
+# Tune Random Forest with Grid Search
+best_model_grid = tuner_grid.tune_model(
+    X_train, y_train,
+    model_type='random_forest'
+)
+
+# Random Search hyperparameter tuning
+tuner_random = HyperparameterTuner(
+    search_method='random',  # Random Search
+    cv=5,
+    n_iter=20,              # Number of iterations
+    random_state=42
+)
+
+# Tune Logistic Regression with Random Search
+best_model_random = tuner_random.tune_model(
+    X_train, y_train,
+    model_type='logistic_regression'
+)
+```
+
+**What it does**:
+- **Grid Search**: Exhaustive search over parameter grid
+- **Random Search**: Random sampling of parameter space
+- Uses cross-validation (cv=5) for robust evaluation
+- Optimizes ROC-AUC score
+
+**Run**: `python examples/tune_hyperparameters.py` → Tuned models saved to `models/tuned/`
+
+#### Step 4: MLflow Experiment Logging
+
+**Implementation**: `src/mlflow_tracking.py` - Logs all experiments to MLflow.
+
+**Concrete Implementation**:
+```python
+from src.mlflow_tracking import MLflowTracker
+from src.model_training import train_models
+import pandas as pd
+
+# Initialize MLflow tracker
+tracker = MLflowTracker(
+    experiment_name="credit_scoring",
+    tracking_uri="file:./mlruns"
+)
+
+# Load data
+X_train = pd.read_csv('data/processed/splits/X_train.csv')
+X_test = pd.read_csv('data/processed/splits/X_test.csv')
+y_train = pd.read_csv('data/processed/splits/y_train.csv')['is_high_risk']
+y_test = pd.read_csv('data/processed/splits/y_test.csv')['is_high_risk']
+
+# Train models
+trainer = ModelTrainer(random_state=42)
+trainer.train(X_train, y_train, model_names=['logistic_regression', 'random_forest'])
+
+# Log each model to MLflow
+for model_name in ['logistic_regression', 'random_forest']:
+    model = trainer.models_[model_name]
+    
+    # Log model training with MLflow
+    run_id = tracker.log_model_training(
+        model=model,
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        model_name=model_name,
+        params=trainer.get_model_params(model_name),
+        artifact_path="model"
+    )
+    
+    print(f"Logged {model_name} to MLflow: run_id={run_id}")
+```
+
+**What it logs**:
+- **Parameters**: Model hyperparameters
+- **Metrics**: Accuracy, Precision, Recall, F1, ROC-AUC
+- **Artifacts**: Trained model files
+- **Tags**: Model name, timestamp, etc.
+
+**Run**: `python examples/train_with_mlflow.py` → Logs experiments to `mlruns/`
+
+**View in MLflow UI**:
 ```bash
 mlflow ui --backend-store-uri file:./mlruns
 # Open http://localhost:5000
 ```
+
+#### Step 5: Metric Calculations
+
+**Implementation**: `src/model_training.py` - Calculates comprehensive evaluation metrics.
+
+**Concrete Implementation**:
+```python
+from src.model_training import ModelTrainer
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix
+)
+
+# Train model
+trainer = ModelTrainer(random_state=42)
+trainer.train(X_train, y_train, model_names=['logistic_regression'])
+
+# Evaluate and get metrics
+model = trainer.models_['logistic_regression']
+y_pred = model.predict(X_test)
+y_pred_proba = model.predict_proba(X_test)[:, 1]
+
+# Calculate all required metrics
+metrics = {
+    'accuracy': accuracy_score(y_test, y_pred),
+    'precision': precision_score(y_test, y_pred),
+    'recall': recall_score(y_test, y_pred),
+    'f1_score': f1_score(y_test, y_pred),
+    'roc_auc': roc_auc_score(y_test, y_pred_proba)
+}
+
+# Also calculates confusion matrix
+cm = confusion_matrix(y_test, y_pred)
+print(f"Accuracy: {metrics['accuracy']:.4f}")
+print(f"Precision: {metrics['precision']:.4f}")
+print(f"Recall: {metrics['recall']:.4f}")
+print(f"F1 Score: {metrics['f1_score']:.4f}")
+print(f"ROC-AUC: {metrics['roc_auc']:.4f}")
+```
+
+**Metrics Calculated**:
+- ✅ **Accuracy**: Ratio of correct predictions
+- ✅ **Precision**: True positives / (True positives + False positives)
+- ✅ **Recall**: True positives / (True positives + False negatives)
+- ✅ **F1 Score**: Harmonic mean of Precision and Recall
+- ✅ **ROC-AUC**: Area Under ROC Curve
+
+#### Step 6: Unit Tests (At Least Two)
+
+**Implementation**: `tests/test_model_training.py` - Unit tests for training and evaluation.
+
+**Concrete Implementation**:
+
+**Test 1: Train and Evaluate Model**
+```python
+# tests/test_model_training.py
+def test_train_and_evaluate(self, sample_data):
+    """Test that model training and evaluation works correctly."""
+    X_train, X_test, y_train, y_test = sample_data
+    
+    trainer = ModelTrainer(random_state=42)
+    trainer.train(X_train, y_train, model_names=['logistic_regression'])
+    
+    # Verify model was trained
+    assert 'logistic_regression' in trainer.models_
+    
+    # Evaluate model
+    metrics = trainer.evaluate(trainer.models_['logistic_regression'], 
+                               X_test, y_test)
+    
+    # Verify metrics are calculated
+    assert 'accuracy' in metrics
+    assert 'precision' in metrics
+    assert 'recall' in metrics
+    assert 'f1_score' in metrics
+    assert 'roc_auc' in metrics
+    
+    # Verify metrics are valid
+    assert 0 <= metrics['accuracy'] <= 1
+    assert 0 <= metrics['roc_auc'] <= 1
+```
+
+**Test 2: Train Multiple Models**
+```python
+# tests/test_model_training.py
+def test_train_multiple_models(self, sample_data):
+    """Test training multiple models."""
+    X_train, X_test, y_train, y_test = sample_data
+    
+    trainer = ModelTrainer(random_state=42)
+    trainer.train(
+        X_train, y_train,
+        model_names=['logistic_regression', 'random_forest']  # At least 2
+    )
+    
+    # Verify both models were trained
+    assert 'logistic_regression' in trainer.models_
+    assert 'random_forest' in trainer.models_
+    
+    # Verify both models have metrics
+    assert 'logistic_regression' in trainer.metrics_
+    assert 'random_forest' in trainer.metrics_
+```
+
+**Additional Tests**:
+- `test_train_logistic_regression` - Tests Logistic Regression training
+- `test_train_random_forest` - Tests Random Forest training
+- `test_data_splitting` - Tests reproducible data splitting
+- `test_hyperparameter_tuning` - Tests Grid Search and Random Search
+
+**Run Tests**:
+```bash
+# Run all model training tests
+pytest tests/test_model_training.py -v
+
+# Run specific tests
+pytest tests/test_model_training.py::TestModelTrainer::test_train_and_evaluate -v
+pytest tests/test_model_training.py::TestModelTrainer::test_train_multiple_models -v
+```
+
+#### Complete Workflow
+
+```bash
+# 1. Prepare data splits (reproducible with random_state=42)
+python examples/prepare_data_splits.py
+
+# 2. Train models with MLflow tracking
+python examples/train_with_mlflow.py
+# Trains at least 2 models, logs to MLflow, calculates metrics
+
+# 3. Hyperparameter tuning with MLflow
+python examples/tune_with_mlflow.py
+# Performs Grid Search and Random Search
+
+# 4. View experiments
+mlflow ui
+# Open http://localhost:5000
+
+# 5. Run unit tests
+pytest tests/test_model_training.py -v
+pytest tests/test_data_splitting.py -v
+pytest tests/test_hyperparameter_tuning.py -v
+```
+
+#### Verification
+
+**Check train/test split**:
+```python
+X_train = pd.read_csv('data/processed/splits/X_train.csv')
+X_test = pd.read_csv('data/processed/splits/X_test.csv')
+print(f"Train: {len(X_train)}, Test: {len(X_test)}")
+# Should show 80/20 split
+```
+
+**Check models trained**:
+```python
+import joblib
+lr = joblib.load('models/logistic_regression.pkl')
+rf = joblib.load('models/random_forest.pkl')
+# Both models exist
+```
+
+**Check MLflow experiments**:
+```bash
+mlflow ui
+# View logged experiments, parameters, metrics
+```
+
+**Check unit tests**:
+```bash
+pytest tests/test_model_training.py -v
+# Should show at least 2 tests passing
+```
+
+**Files**: 
+- `src/data_splitting.py` - Reproducible train/test split
+- `src/model_training.py` - Model training (at least 2 models)
+- `src/hyperparameter_tuning.py` - Grid Search and Random Search
+- `src/mlflow_tracking.py` - MLflow experiment logging
+- `examples/train_with_mlflow.py` - Complete training workflow
+- `examples/tune_with_mlflow.py` - Hyperparameter tuning workflow
+- `tests/test_model_training.py` - Unit tests (at least 2 tests)
+- `tests/test_data_splitting.py` - Data splitting tests
+- `tests/test_hyperparameter_tuning.py` - Tuning tests
+
+**Documentation**: `docs/mlflow_usage.md`
 
 ---
 
