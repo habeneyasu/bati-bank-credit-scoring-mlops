@@ -239,6 +239,54 @@ class TestTrainModelsFunction:
         assert 'decision_tree' in trainer.models_
 
 
+    def test_evaluate_model_computes_all_metrics(self, sample_data):
+        """Test that evaluation computes all required metrics: Accuracy, Precision, Recall, F1, ROC-AUC."""
+        X_train, X_test, y_train, y_test = sample_data
+        
+        trainer = ModelTrainer(random_state=42)
+        model = trainer.train_model('logistic_regression', X_train, y_train)
+        
+        # Evaluate model
+        metrics = trainer.evaluate_model(model, X_test, y_test, set_name='test')
+        
+        # Verify all required metrics are computed
+        required_metrics = ['test_accuracy', 'test_precision', 'test_recall', 'test_f1_score', 'test_roc_auc']
+        for metric in required_metrics:
+            assert metric in metrics, f"Missing required metric: {metric}"
+            assert isinstance(metrics[metric], (int, float)), f"Metric {metric} should be numeric"
+            assert 0 <= metrics[metric] <= 1, f"Metric {metric} should be in [0, 1]"
+        
+        # Verify metric values are reasonable
+        assert metrics['test_accuracy'] > 0, "Accuracy should be positive"
+        assert metrics['test_roc_auc'] > 0, "ROC-AUC should be positive"
+    
+    def test_train_and_evaluate_computes_all_metrics(self, sample_data):
+        """Test that train_and_evaluate computes all required metrics for both train and test sets."""
+        X_train, X_test, y_train, y_test = sample_data
+        
+        trainer = ModelTrainer(random_state=42)
+        model, metrics = trainer.train_and_evaluate(
+            'random_forest',
+            X_train, y_train,
+            X_test, y_test
+        )
+        
+        # Verify model was trained
+        assert model is not None
+        assert 'random_forest' in trainer.models_
+        
+        # Verify all required metrics are computed for test set
+        required_test_metrics = ['test_accuracy', 'test_precision', 'test_recall', 'test_f1_score', 'test_roc_auc']
+        for metric in required_test_metrics:
+            assert metric in metrics, f"Missing required test metric: {metric}"
+            assert isinstance(metrics[metric], (int, float)), f"Metric {metric} should be numeric"
+            assert 0 <= metrics[metric] <= 1, f"Metric {metric} should be in [0, 1]"
+        
+        # Verify train metrics are also present
+        assert 'train_accuracy' in metrics
+        assert 'train_roc_auc' in metrics
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
