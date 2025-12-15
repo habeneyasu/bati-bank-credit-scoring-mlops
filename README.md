@@ -139,3 +139,201 @@ Given the regulatory context and business requirements, a **hybrid approach** ma
    - Limitations and assumptions
 
 **Conclusion**: In regulated financial contexts, interpretability and regulatory compliance often outweigh marginal performance gains. However, the optimal choice depends on the specific regulatory environment, business requirements, and the magnitude of the performance difference between models.
+
+---
+
+## Task 4: Proxy Target Variable Engineering
+
+**Objective**: Create a credit risk target variable since there is no pre-existing "credit risk" column in the data. Programmatically identify "disengaged" customers and label them as high-risk proxies.
+
+### Overview
+
+Since direct default labels are unavailable, we use RFM (Recency, Frequency, Monetary) analysis to create a proxy target variable. This approach identifies high-risk customers based on behavioral patterns that correlate with credit risk.
+
+### Implementation Steps
+
+#### Step 1: Calculate RFM Metrics
+
+For each `CustomerId`, calculate their Recency, Frequency, and Monetary (RFM) values from transaction history.
+
+**Key Features:**
+- **Recency**: Days since last transaction (calculated from a snapshot date)
+- **Frequency**: Total number of transactions per customer
+- **Monetary**: Total transaction amount per customer (sum of all transaction amounts)
+- **Snapshot Date**: Configurable reference date for consistent Recency calculation
+
+**Implementation:**
+- Module: `src/rfm_calculator.py`
+- Example: `examples/step1_calculate_rfm.py`
+- Documentation: `docs/step1_rfm_calculation.md`
+
+**Usage:**
+```python
+from src.rfm_calculator import RFMCalculator
+
+calculator = RFMCalculator(
+    customer_col='CustomerId',
+    datetime_col='TransactionStartTime',
+    amount_col='Amount',
+    snapshot_date='2024-12-31'  # Optional, defaults to max date
+)
+
+rfm_metrics = calculator.calculate_rfm(transactions_df)
+```
+
+**Output:**
+- `data/processed/rfm_metrics.csv`: RFM metrics for each customer
+
+#### Step 2: Cluster Customers using K-Means
+
+Use K-Means clustering algorithm to segment customers into 3 distinct groups based on their RFM profiles.
+
+**Key Features:**
+- **Feature Scaling**: Pre-processes RFM features using StandardScaler or RobustScaler
+- **K-Means Clustering**: Segments customers into 3 distinct groups (configurable)
+- **Reproducibility**: Uses `random_state=42` to ensure consistent results
+- **Cluster Analysis**: Provides statistics and centroids for each cluster
+
+**Implementation:**
+- Module: `src/customer_clustering.py`
+- Example: `examples/step2_cluster_customers.py`
+- Documentation: `docs/step2_customer_clustering.md`
+
+**Usage:**
+```python
+from src.customer_clustering import CustomerClustering
+
+clustering = CustomerClustering(
+    n_clusters=3,
+    scaling_method='standardize',  # 'standardize', 'robust', or None
+    random_state=42
+)
+
+rfm_with_clusters = clustering.cluster_customers(rfm_metrics)
+```
+
+**Output:**
+- `data/processed/rfm_with_clusters.csv`: RFM metrics with cluster assignments
+
+#### Step 3: Define and Assign High-Risk Label
+
+Analyze the resulting clusters to determine which one represents the least engaged (highest-risk) customer segment and create a binary target variable.
+
+**Key Features:**
+- **Automatic Cluster Analysis**: Analyzes cluster characteristics to identify high-risk segment
+- **Engagement Score**: Combines normalized RFM metrics to score engagement
+- **Binary Target Variable**: Creates `is_high_risk` column (1 for high-risk, 0 for low-risk)
+- **High-Risk Identification**: Cluster with highest recency, lowest frequency, and lowest monetary value
+
+**Implementation:**
+- Module: `src/high_risk_labeling.py`
+- Example: `examples/step3_create_high_risk_target.py`
+- Documentation: `docs/step3_high_risk_target.md`
+
+**Usage:**
+```python
+from src.high_risk_labeling import HighRiskLabeler
+
+labeler = HighRiskLabeler()
+
+# Identify high-risk cluster
+high_risk_cluster_id = labeler.identify_high_risk_cluster(rfm_with_clusters)
+
+# Create target variable
+rfm_with_target = labeler.create_target_variable(rfm_with_clusters)
+```
+
+**Output:**
+- `data/processed/rfm_with_target.csv`: RFM metrics with `is_high_risk` target
+- `data/processed/transactions_with_target.csv`: Transaction data with `is_high_risk` target
+
+#### Step 4: Integrate Target Variable
+
+Merge the `is_high_risk` column back into the main processed dataset for model training.
+
+**Implementation:**
+- Script: `examples/integrate_target_to_processed_data.py`
+
+**Usage:**
+```python
+python examples/integrate_target_to_processed_data.py
+```
+
+**Output:**
+- `data/processed/processed_data_with_target.csv`: Feature-engineered data with `is_high_risk` target
+
+### Target Variable Interpretation
+
+- **`is_high_risk = 1`**: Customers in the least engaged cluster
+  - High recency (long time since last transaction)
+  - Low frequency (few transactions)
+  - Low monetary value (low spending)
+  - **Interpretation**: Higher likelihood of default/credit risk
+
+- **`is_high_risk = 0`**: Customers in other clusters
+  - Better engagement patterns
+  - **Interpretation**: Lower likelihood of default/credit risk
+
+### Testing
+
+All modules include comprehensive unit tests:
+
+```bash
+# Test RFM calculation
+pytest tests/test_rfm_calculator.py -v
+
+# Test customer clustering
+pytest tests/test_customer_clustering.py -v
+
+# Test high-risk labeling
+pytest tests/test_high_risk_labeling.py -v
+```
+
+### Complete Workflow
+
+Run all steps sequentially:
+
+```bash
+# Step 1: Calculate RFM metrics
+python examples/step1_calculate_rfm.py
+
+# Step 2: Cluster customers
+python examples/step2_cluster_customers.py
+
+# Step 3: Create high-risk target
+python examples/step3_create_high_risk_target.py
+
+# Step 4: Integrate target with processed data
+python examples/integrate_target_to_processed_data.py
+```
+
+### Key Design Decisions
+
+1. **RFM Analysis**: Industry-standard approach for customer segmentation and risk assessment
+2. **K-Means Clustering**: Unsupervised learning to identify natural customer segments
+3. **Automatic High-Risk Identification**: Data-driven approach based on engagement scores
+4. **Binary Classification**: Simple binary target for model training
+5. **Reproducibility**: All steps use fixed random states for consistent results
+
+### Deliverables
+
+✅ **RFM Metrics Calculator** (`src/rfm_calculator.py`)  
+✅ **Customer Clustering Module** (`src/customer_clustering.py`)  
+✅ **High-Risk Labeling Module** (`src/high_risk_labeling.py`)  
+✅ **Integration Script** (`examples/integrate_target_to_processed_data.py`)  
+✅ **Comprehensive Unit Tests** (`tests/test_*.py`)  
+✅ **Example Scripts** (`examples/step*.py`)  
+✅ **Documentation** (`docs/step*.md`)  
+✅ **Processed Data with Target** (`data/processed/processed_data_with_target.csv`)
+
+### Next Steps
+
+After completing Task 4, you have:
+- ✅ RFM metrics calculated for each customer
+- ✅ Customers clustered into 3 distinct groups
+- ✅ High-risk target variable created (`is_high_risk`)
+- ✅ Target integrated with feature-engineered data
+
+**Ready for Task 5: Model Training and Tracking**
+
+---
