@@ -80,51 +80,46 @@ When traditional credit data is unavailable, **customer engagement patterns** se
 - [ ] Docker installed (for containerized deployment) - *Optional*
 - [ ] 4GB+ RAM available
 - [ ] Virtual environment support (venv or conda)
-- [ ] Kaggle account (for dataset access)
-- [ ] Dataset downloaded and placed in `data/raw/` directory
+- [ ] Dataset obtained through approved channels and placed in `data/raw/` directory
 
 ---
 
 ## Dataset
 
-This project uses the **Xente Transaction Dataset** from Kaggle:
+This project uses transaction data with the following characteristics:
 
-- **95,662 transactions** across 90 days (Nov 2018 - Feb 2019)
+- **95,662 transactions** across 90 days
 - **16 original features** expanded to **26 engineered features**
 - **11,000+ unique customers**
 
-**⚠️ Important**: The dataset is **not included** in this repository (data files are in `.gitignore` for privacy and size reasons). You need to download it separately.
-
-**Dataset Source**: [Xente Challenge | Kaggle](https://www.kaggle.com/datasets/atwine/xente-challenge)
+**⚠️ Important**: The dataset is **not included** in this repository. Data files are in `.gitignore` for privacy and security reasons. Users must obtain the dataset through their organization's approved channels.
 
 ### Setting Up the Data
 
-1. **Download the dataset** from Kaggle:
-   ```bash
-   # Option 1: Using Kaggle API
-   kaggle datasets download -d atwine/xente-challenge
-   unzip xente-challenge.zip
-   
-   # Option 2: Manual download from Kaggle website
-   # Visit: https://www.kaggle.com/datasets/atwine/xente-challenge
-   ```
+**Note**: Obtain the dataset through your organization's approved data access channels. Ensure compliance with data privacy and security policies.
 
-2. **Create data directory structure**:
+1. **Create data directory structure**:
    ```bash
    mkdir -p data/raw data/processed
    ```
 
-3. **Place the dataset**:
+2. **Place the dataset**:
    ```bash
-   # Copy the downloaded CSV file to data/raw/
-   cp <downloaded_file>.csv data/raw/data.csv
+   # Place your dataset file in data/raw/ directory
+   # Ensure the file is named 'data.csv' or update the code accordingly
+   cp <your_dataset_file>.csv data/raw/data.csv
    ```
 
-4. **Verify the data**:
+3. **Verify the data**:
    ```bash
    # Check file exists
    ls -lh data/raw/data.csv
    ```
+
+**Data Requirements**:
+- CSV format
+- Required columns: `CustomerId`, `TransactionStartTime`, `Amount`, `ProductCategory`, `ChannelId`, `ProviderId`, etc.
+- See `notebooks/eda.ipynb` for expected data structure
 
 ---
 
@@ -547,20 +542,19 @@ The project includes GitHub Actions workflow (`.github/workflows/ci.yml`) that:
 ## 🤝 Acknowledgments
 
 - **Kifiya AI Mastery 10 Academy** for the structured learning framework
-- **Dataset Providers** for the Xente transaction dataset (available on Kaggle)
 - **Open Source Community** for MLflow, FastAPI, and other tools
 
 ---
 
 ## ⚠️ Data Privacy Notice
 
-**Data files are not included in this repository** for privacy and size reasons:
+**Data files are not included in this repository** for privacy and security reasons:
 - Raw data files are in `.gitignore` (not tracked by Git)
 - Processed data files are in `.gitignore` (not tracked by Git)
 - Model files are in `.gitignore` (not tracked by Git)
 - MLflow runs are in `.gitignore` (not tracked by Git)
 
-**Users must download the dataset separately** from Kaggle and set up the data directory structure as described in the Dataset section above.
+**Users must obtain the dataset through their organization's approved data access channels** and set up the data directory structure as described in the Dataset section above. Ensure compliance with all data privacy and security policies.
 
 ---
 
