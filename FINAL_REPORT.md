@@ -384,9 +384,11 @@ The final piece was automation. We configured GitHub Actions to run on every pus
 
 This wasn't just automation—it was quality assurance. Every change was validated. Every commit was tested. The build would fail if code quality dropped.
 
-![CI/CD Pipeline](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/cicd_pipeline.png?raw=true)
+**GitHub Actions CI/CD Pipeline**
 
 *Figure 9: GitHub Actions CI/CD pipeline showing successful runs. The pipeline includes linting (flake8) and testing (pytest) steps. Green checkmarks indicate successful builds, ensuring code quality and test coverage.*
+
+*To view: Navigate to the GitHub repository → Actions tab. The workflow runs show the execution status of each step: code checkout, Python setup, dependency installation, linting, and testing. Successful runs display green checkmarks, while failures show red X marks with detailed error logs.*
 
 The CI/CD pipeline became our safety net. It caught errors early. It enforced standards. It gave us confidence in every deployment.
 
