@@ -337,3 +337,170 @@ After completing Task 4, you have:
 **Ready for Task 5: Model Training and Tracking**
 
 ---
+
+## Task 5: Model Training and Tracking
+
+**Objective**: Develop a structured model training process that includes experiment tracking, model versioning, and unit testing.
+
+### Overview
+
+Task 5 implements a comprehensive model training pipeline with MLflow integration for experiment tracking, hyperparameter tuning, and model registry management.
+
+### Implementation Components
+
+#### 1. Data Preparation
+
+Split the data into training and testing sets with reproducibility.
+
+**Implementation:**
+- Module: `src/data_splitting.py`
+- Example: `examples/prepare_data_splits.py`
+
+**Usage:**
+```python
+from src.data_splitting import DataSplitter
+
+splitter = DataSplitter(test_size=0.2, random_state=42, stratify=True)
+X_train, X_test, y_train, y_test = splitter.split_data(df, target_col='is_high_risk')
+```
+
+#### 2. Model Selection and Training
+
+Train multiple models: Logistic Regression, Decision Tree, Random Forest, and Gradient Boosting (XGBoost/LightGBM).
+
+**Implementation:**
+- Module: `src/model_training.py`
+- Example: `examples/train_models.py`
+
+**Usage:**
+```python
+from src.model_training import train_models
+
+models, metrics = train_models(
+    X_train, y_train, X_test, y_test,
+    model_names=['logistic_regression', 'random_forest', 'xgboost'],
+    random_state=42
+)
+```
+
+**Evaluation Metrics:**
+- Accuracy, Precision, Recall, F1 Score
+- ROC-AUC, PR-AUC
+- Confusion Matrix
+
+#### 3. Hyperparameter Tuning
+
+Improve model performance using Grid Search and Random Search.
+
+**Implementation:**
+- Module: `src/hyperparameter_tuning.py`
+- Example: `examples/tune_hyperparameters.py`
+
+**Usage:**
+```python
+from src.hyperparameter_tuning import HyperparameterTuner
+
+tuner = HyperparameterTuner(search_method='grid', cv=5, scoring='roc_auc')
+best_model = tuner.tune_model(X_train, y_train, model_type='random_forest')
+```
+
+#### 4. Experiment Tracking with MLflow
+
+Log all experiments including parameters, metrics, and model artifacts.
+
+**Implementation:**
+- Module: `src/mlflow_tracking.py`
+- Example: `examples/train_with_mlflow.py`
+
+**Features:**
+- Automatic experiment tracking
+- Model parameter logging
+- Evaluation metrics tracking
+- Model artifact storage
+- Model registry integration
+
+**Usage:**
+```python
+from src.mlflow_tracking import MLflowTracker
+
+tracker = MLflowTracker(experiment_name="credit_scoring")
+tracker.log_model_training(model, X_train, y_train, X_test, y_test, 
+                           model_name="random_forest", params={...})
+```
+
+**View Experiments:**
+```bash
+mlflow ui --backend-store-uri file:./mlruns
+# Open http://localhost:5000
+```
+
+#### 5. Model Registry
+
+Register and manage model versions in MLflow Model Registry.
+
+**Usage:**
+```python
+# Register best model
+tracker.register_model(run_id, model_name="credit_scoring_model", stage="Production")
+
+# Load from registry
+model = mlflow.sklearn.load_model("models:/credit_scoring_model/Production")
+```
+
+#### 6. Unit Testing
+
+Comprehensive unit tests for all helper functions.
+
+**Test Files:**
+- `tests/test_data_splitting.py`
+- `tests/test_model_training.py`
+- `tests/test_hyperparameter_tuning.py`
+- `tests/test_mlflow_tracking.py`
+- `tests/test_data_processing.py` (helper functions)
+
+**Run Tests:**
+```bash
+pytest tests/ -v
+```
+
+### Complete Workflow
+
+```bash
+# 1. Prepare data splits
+python examples/prepare_data_splits.py
+
+# 2. Train models with MLflow tracking
+python examples/train_with_mlflow.py
+
+# 3. Hyperparameter tuning with MLflow
+python examples/tune_with_mlflow.py
+
+# 4. Register best model
+python examples/register_best_model.py
+
+# 5. View experiments
+mlflow ui
+```
+
+### Deliverables
+
+✅ **Data Splitting Module** (`src/data_splitting.py`)  
+✅ **Model Training Module** (`src/model_training.py`)  
+✅ **Hyperparameter Tuning Module** (`src/hyperparameter_tuning.py`)  
+✅ **MLflow Tracking Module** (`src/mlflow_tracking.py`)  
+✅ **Comprehensive Unit Tests** (`tests/test_*.py`)  
+✅ **Example Scripts** (`examples/train_*.py`, `examples/tune_*.py`)  
+✅ **Documentation** (`docs/mlflow_usage.md`)  
+✅ **Trained Models** (saved in `models/` and MLflow registry)
+
+### Next Steps
+
+After completing Task 5, you have:
+- ✅ Multiple trained models with evaluation metrics
+- ✅ Hyperparameter-tuned models
+- ✅ MLflow experiment tracking and model registry
+- ✅ Best model identified and registered
+
+**Ready for Task 6: Model Deployment and CI/CD**
+
+---
