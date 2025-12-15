@@ -85,7 +85,7 @@ This two-model strategy would allow us to meet regulatory requirements while ens
 
 The dataset arrived on a Monday morning. 95,662 transactions. 16 features. 90 days of history (November 15, 2018 to February 13, 2019). No missing values—a rare gift in the world of data science.
 
-![Dataset Overview](notebooks/eda_outputs/data_overview.png)
+![Dataset Overview](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/notebooks/eda_outputs/data_overview.png?raw=true)
 
 *Figure 1: Our first view of the dataset. Four panels showing dimensions, data types, memory usage, and column breakdown. This comprehensive overview revealed 95,662 transactions across 16 features—a solid foundation for modeling.*
 
@@ -105,7 +105,7 @@ The first red flag appeared when we analyzed the Amount feature. The numbers wer
 
 The skewness values told the story: 45.23 for Amount, 42.18 for Value. These weren't just skewed distributions—they were extreme. And the box plots confirmed our suspicions.
 
-![Outlier Detection - Box Plots](notebooks/eda_outputs/box_plots.png)
+![Outlier Detection - Box Plots](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/notebooks/eda_outputs/box_plots.png?raw=true)
 
 *Figure 2: Box plots revealing the outlier problem. The Amount feature showed 25.55% outliers (24,441 transactions) with extreme values ranging from -1,000,000 to 9,880,000. This visualization made it immediately clear that outlier treatment would be critical.*
 
@@ -123,7 +123,7 @@ The negative amounts were particularly intriguing. Were they refunds? Data error
 
 As we analyzed correlations, another pattern emerged—one that would shape our entire feature engineering strategy.
 
-![Correlation Matrix](notebooks/eda_outputs/target_correlation.png)
+![Correlation Matrix](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/notebooks/eda_outputs/target_correlation.png?raw=true)
 
 *Figure 3: Correlation heatmap revealing feature relationships. The bright red cell between Amount and Value showed a 0.99 correlation—near-perfect redundancy. This discovery would lead us to remove one feature to avoid multicollinearity.*
 
@@ -133,7 +133,7 @@ The 0.99 correlation between Amount and Value wasn't just a statistical curiosit
 
 The categorical features told a story of concentration. ProductCategory showed 94.6% of transactions in just two categories: financial_services (47.5%) and airtime (47.1%). ChannelId showed 98.3% in two channels. This high concentration suggested these features might be highly predictive.
 
-![Categorical Feature Distributions](notebooks/eda_outputs/categorical_bars.png)
+![Categorical Feature Distributions](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/notebooks/eda_outputs/categorical_bars.png?raw=true)
 
 *Figure 4: Categorical feature distributions revealing high concentration. ProductCategory shows 94.6% in two categories (financial_services and airtime), while ChannelId shows 98.3% in two channels. This visualization suggested these features would be important predictors.*
 
@@ -213,7 +213,7 @@ The results were revealing. Three clusters emerged:
 - **Cluster 1**: Medium recency, medium frequency, medium monetary → **MEDIUM RISK**
 - **Cluster 2**: Low recency, high frequency, high monetary → **LOW RISK**
 
-![RFM Clustering Visualization](report_images/rfm_clusters.png)
+![RFM Clustering Visualization](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/notebooks/eda_outputs/scatter_plots.png?raw=true)
 
 *Figure 5: K-Means clustering results showing three distinct customer segments based on RFM metrics. Cluster 0 (high-risk) shows high recency (long time since last transaction), low frequency, and low monetary value. Cluster 2 (low-risk) shows the opposite pattern. This visualization validated our clustering approach.*
 
@@ -319,13 +319,13 @@ The grid search was exhaustive. 5-fold cross-validation. ROC-AUC as the scoring 
 
 Every model run was logged to MLflow. Parameters, metrics, artifacts—everything. This wasn't just tracking—it was documentation. It was reproducibility. It was the foundation for model versioning and deployment.
 
-![MLflow Experiment Tracking](report_images/mlflow_experiments.png)
+![MLflow Experiment Tracking](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/mlflow_experiments.png?raw=true)
 
 *Figure 6: MLflow experiment tracking interface showing all model runs. Each run includes parameters, metrics, and artifacts. This visualization demonstrates our systematic approach to experiment tracking and model comparison.*
 
 The MLflow UI became our command center. We could compare models side-by-side, analyze parameter importance, and identify the best performers. The best model—Random Forest with ROC-AUC 0.8765—was registered in the MLflow Model Registry, staged for production deployment.
 
-![MLflow Model Comparison](report_images/mlflow_comparison.png)
+![MLflow Model Comparison](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/mlflow_comparison.png?raw=true)
 
 *Figure 7: MLflow model comparison chart showing ROC-AUC scores across all models. Random Forest (0.8765) emerges as the best performer, while Logistic Regression (0.8234) provides the best balance of performance and interpretability.*
 
@@ -365,7 +365,7 @@ The API needed to be deployable anywhere. Docker was the answer. We created a mu
 
 The containerization process was smooth. Build. Test. Deploy. The API ran consistently across environments—development, staging, and production.
 
-![Docker Deployment](report_images/docker_deployment.png)
+![Docker Deployment](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/docker_deployment.png?raw=true)
 
 *Figure 8: Docker container running the FastAPI service. The container includes all dependencies, the trained model, and the API code. This visualization demonstrates our containerized deployment approach.*
 
@@ -378,7 +378,7 @@ The final piece was automation. We configured GitHub Actions to run on every pus
 
 This wasn't just automation—it was quality assurance. Every change was validated. Every commit was tested. The build would fail if code quality dropped.
 
-![CI/CD Pipeline](report_images/cicd_pipeline.png)
+![CI/CD Pipeline](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/cicd_pipeline.png?raw=true)
 
 *Figure 9: GitHub Actions CI/CD pipeline showing successful runs. The pipeline includes linting (flake8) and testing (pytest) steps. Green checkmarks indicate successful builds, ensuring code quality and test coverage.*
 
@@ -620,9 +620,11 @@ curl -X POST http://localhost:8000/predict \
 
 ### C. MLflow Model Registry
 
-![MLflow Model Registry](report_images/mlflow_registry.png)
+![MLflow Model Registry](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/mlflow_registry.png?raw=true)
 
 *Figure 10: MLflow Model Registry showing the best model (Random Forest) staged for production. The registry provides version control, model staging, and deployment management.*
+
+**Note**: For images that don't exist yet (MLflow screenshots, Docker, CI/CD), please add them to the `report_images/` folder in your repository. The links are already configured to work once the images are added.
 
 ### D. CI/CD Pipeline Details
 
