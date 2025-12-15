@@ -504,3 +504,164 @@ After completing Task 5, you have:
 **Ready for Task 6: Model Deployment and CI/CD**
 
 ---
+
+## Task 6: Model Deployment and Continuous Integration
+
+**Objective**: Package the trained model into a containerized API and set up a CI/CD pipeline to automate testing and ensure code quality.
+
+### Overview
+
+Task 6 implements a production-ready REST API using FastAPI, containerizes the service with Docker, and sets up automated CI/CD with GitHub Actions.
+
+### Implementation Components
+
+#### 1. Setup
+
+Added required dependencies to `requirements.txt`:
+- `fastapi>=0.103`: Web framework for building APIs
+- `uvicorn>=0.23`: ASGI server for running FastAPI
+- `flake8>=7.0`: Code linter for style checking
+- `pydantic>=2.3`: Data validation using Python type annotations
+
+#### 2. Create the API
+
+Built a REST API using FastAPI that loads the best model from MLflow registry.
+
+**Implementation:**
+- API: `src/api/main.py`
+- Pydantic Models: `src/api/pydantic_models.py`
+- Test Script: `examples/test_api.py`
+
+**Key Features:**
+- `/health`: Health check endpoint
+- `/predict`: Credit risk prediction endpoint
+- Automatic model loading from MLflow registry
+- Request/response validation with Pydantic
+- Error handling and logging
+
+**Usage:**
+```bash
+# Run API locally
+uvicorn src.api.main:app --reload
+
+# Test API
+python examples/test_api.py
+```
+
+**API Endpoints:**
+- `GET /health`: Returns API and model status
+- `POST /predict`: Accepts feature vector, returns risk prediction and probability
+
+#### 3. Containerize the Service
+
+Created Docker configuration for easy deployment.
+
+**Files:**
+- `Dockerfile`: Multi-stage build for optimized image
+- `docker-compose.yml`: Service orchestration
+- `.dockerignore`: Optimize build context
+
+**Usage:**
+```bash
+# Build and run
+docker-compose up --build
+
+# Run in background
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop service
+docker-compose down
+```
+
+**Features:**
+- Multi-stage build for smaller image size
+- Health checks configured
+- Volume mounting for MLflow model registry
+- Environment variable configuration
+
+#### 4. Configure CI/CD
+
+Set up GitHub Actions workflow for automated testing and code quality checks.
+
+**Implementation:**
+- Workflow: `.github/workflows/ci.yml`
+- Linter Config: `.flake8`
+
+**CI/CD Pipeline:**
+- Triggers on push to `main`/`master` branches
+- Runs flake8 linter (fails on syntax errors)
+- Executes pytest test suite
+- Build fails if either step fails
+
+**Features:**
+- Automated code quality checks
+- Unit test execution
+- Python 3.12 environment
+- Dependency caching for faster builds
+
+### Complete Workflow
+
+```bash
+# 1. Build and start API
+docker-compose up --build
+
+# 2. Test API endpoints
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d '{"features": [...]}'
+
+# 3. View API documentation
+# Open http://localhost:8000/docs
+
+# 4. Run automated tests
+./scripts/test_docker_compose.sh
+```
+
+### Deliverables
+
+✅ **FastAPI REST API** (`src/api/main.py`)  
+✅ **Pydantic Models** (`src/api/pydantic_models.py`)  
+✅ **Dockerfile** (multi-stage build)  
+✅ **docker-compose.yml** (service orchestration)  
+✅ **GitHub Actions CI/CD** (`.github/workflows/ci.yml`)  
+✅ **Linter Configuration** (`.flake8`)  
+✅ **API Test Script** (`examples/test_api.py`)  
+✅ **Documentation** (`docs/api_deployment.md`, `docs/docker_testing_guide.md`)
+
+### Testing
+
+**Local Testing:**
+```bash
+# Test API
+python examples/test_api.py
+
+# Test Docker setup
+./scripts/test_docker_compose.sh
+```
+
+**CI/CD Testing:**
+- Automatically runs on every push to main branch
+- Checks code style with flake8
+- Runs all unit tests with pytest
+
+### Key Design Decisions
+
+1. **FastAPI**: Modern, fast, and automatically generates API documentation
+2. **Pydantic Validation**: Type-safe request/response handling
+3. **Docker Containerization**: Consistent deployment across environments
+4. **MLflow Integration**: Loads models from registry for easy model updates
+5. **CI/CD Automation**: Ensures code quality and prevents regressions
+
+### Next Steps
+
+After completing Task 6, you have:
+- ✅ Production-ready REST API
+- ✅ Containerized deployment
+- ✅ Automated CI/CD pipeline
+- ✅ Code quality enforcement
+
+**Project Complete!** 🎉
+
+---
