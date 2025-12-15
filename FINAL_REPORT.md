@@ -4,6 +4,16 @@
 
 ---
 
+## 🎓 Learning Context
+
+This project was completed as part of **Week 4** of the **Kifiya AI Mastery 10 Academy**. 
+
+It represents a **structured learning exercise** implementing industry-relevant MLOps patterns for credit risk assessment using alternative data.
+
+**Note**: This is an educational implementation showing methodology application, not a production system for any specific organization.
+
+---
+
 ## Prologue: The Challenge That Started It All
 
 It was a crisp December morning when the call came in. Bati Bank, a financial institution with over a decade of experience, had just partnered with an emerging eCommerce platform to launch a buy-now-pay-later (BNPL) service. The opportunity was enormous—access to thousands of new customers, a growing market, and the potential for significant revenue growth.
