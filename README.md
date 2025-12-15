@@ -387,15 +387,9 @@ mlflow ui
 
 ---
 
-## 📝 License
-
-[Add your license information here]
-
----
-
 ## 👥 Authors
 
-[Add author information here]
+Haben Eyasu
 
 ---
 
