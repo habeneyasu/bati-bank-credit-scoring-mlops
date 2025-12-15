@@ -709,46 +709,358 @@ pytest tests/test_model_training.py -v
 
 ---
 
-### Task 6: Model Deployment and CI/CD
+### Task 6: Model Deployment and Continuous Integration
 
-**Objective**: Deploy model as containerized REST API with automated CI/CD pipeline.
+**Objective**: Package the trained model into a containerized API and set up a CI/CD pipeline.
 
-**Key Components**:
+**Challenge Requirement**: Add a real FastAPI app that loads the best MLflow model, exposes a `/predict` endpoint with Pydantic schemas, provide working Docker and docker-compose definitions, and a CI workflow that runs linting and pytest and fails on errors.
 
-1. **REST API**: FastAPI with `/predict` and `/health` endpoints
-   ```bash
-   uvicorn src.api.main:app --reload
-   # API docs: http://localhost:8000/docs
-   ```
+#### Step 1: FastAPI App Loading Best MLflow Model
 
-2. **Docker Containerization**: Multi-stage build with Docker Compose
-   ```bash
-   docker-compose up --build
-   ```
+**Implementation**: `src/api/main.py` - FastAPI application that loads model from MLflow registry.
 
-3. **CI/CD Pipeline**: GitHub Actions with flake8 linting and pytest testing
-   - Automatically runs on push to `main` branch
-   - Code quality checks and unit test execution
+**Concrete Implementation**:
+```python
+# src/api/main.py
+from fastapi import FastAPI, HTTPException
+import mlflow
+import mlflow.sklearn
+import os
+import numpy as np
 
-**API Endpoints**:
-- `GET /health`: Health check and model status
-- `POST /predict`: Credit risk prediction (requires 26 feature values)
+app = FastAPI(title="Credit Scoring API")
 
-**Files**:
-- `src/api/main.py` - FastAPI application
-- `src/api/pydantic_models.py` - Request/response validation
-- `Dockerfile` - Container configuration
-- `docker-compose.yml` - Service orchestration
-- `.github/workflows/ci.yml` - CI/CD pipeline
+# Global model variable
+model = None
+model_name = None
+
+def load_model_from_mlflow(
+    model_name: str = "credit_scoring_model",
+    stage: str = "Production"
+):
+    """Load best model from MLflow Model Registry."""
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "file:./mlruns"))
+    
+    # Load model from registry
+    model_uri = f"models:/{model_name}/{stage}"
+    model = mlflow.sklearn.load_model(model_uri)
+    
+    return model
+
+@app.on_event("startup")
+async def startup_event():
+    """Load best model on application startup."""
+    global model, model_name
+    
+    model_name = os.getenv("MODEL_NAME", "credit_scoring_model")
+    model_stage = os.getenv("MODEL_STAGE", "Production")
+    
+    # Load best model from MLflow registry
+    model = load_model_from_mlflow(model_name, model_stage)
+    print(f"Model loaded: {model_name} ({model_stage})")
+
+@app.post("/predict")
+async def predict(request: PredictionRequest):
+    """Predict credit risk using loaded MLflow model."""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    # Make prediction
+    features_array = np.array(request.features).reshape(1, -1)
+    prediction = model.predict(features_array)[0]
+    probability = model.predict_proba(features_array)[0][1]
+    
+    return PredictionResponse(
+        prediction=int(prediction),
+        probability=float(probability),
+        risk_level="high" if prediction == 1 else "low"
+    )
+```
+
+**What it does**:
+- ✅ Loads best model from MLflow registry (`models:/credit_scoring_model/Production`)
+- ✅ Loads on startup using `@app.on_event("startup")`
+- ✅ Uses MLflow's `mlflow.sklearn.load_model()` to load registered model
+
+**File**: `src/api/main.py`
+
+#### Step 2: /predict Endpoint with Pydantic Schemas
+
+**Implementation**: `src/api/pydantic_models.py` - Pydantic models for request/response validation.
+
+**Concrete Implementation**:
+```python
+# src/api/pydantic_models.py
+from pydantic import BaseModel, Field
+from typing import List
+
+class PredictionRequest(BaseModel):
+    """Request model with Pydantic validation."""
+    features: List[float] = Field(
+        ...,
+        description="List of 26 feature values",
+        min_length=26,
+        max_length=26,
+        example=[0.0, -0.046, -0.072, -0.349, -0.045, -2.156, ...]
+    )
+
+class PredictionResponse(BaseModel):
+    """Response model with Pydantic validation."""
+    prediction: int = Field(..., ge=0, le=1, description="Binary prediction")
+    probability: float = Field(..., ge=0.0, le=1.0, description="Risk probability")
+    risk_level: str = Field(..., description="Risk level: 'low' or 'high'")
+```
+
+**Endpoint Implementation**:
+```python
+# In src/api/main.py
+from src.api.pydantic_models import PredictionRequest, PredictionResponse
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest):
+    """Predict endpoint with Pydantic request/response validation."""
+    # Pydantic automatically validates request.features
+    # Returns validated PredictionResponse
+    ...
+```
+
+**What it does**:
+- ✅ `/predict` endpoint accepts `PredictionRequest` (validated by Pydantic)
+- ✅ Returns `PredictionResponse` (validated by Pydantic)
+- ✅ Automatic validation of feature count, types, and ranges
+
+**Files**: 
+- `src/api/pydantic_models.py` - Pydantic schemas
+- `src/api/main.py` - Endpoint implementation
+
+#### Step 3: Working Docker Definition
+
+**Implementation**: `Dockerfile` - Multi-stage build for optimized container.
+
+**Concrete Implementation**:
+```dockerfile
+# Dockerfile
+FROM python:3.12-slim as builder
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Production stage
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Copy installed packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application
+COPY src/ ./src/
+RUN mkdir -p ./mlruns
+
+# Environment variables
+ENV PYTHONPATH=/app
+ENV MLFLOW_TRACKING_URI=file:./mlruns
+ENV MODEL_NAME=credit_scoring_model
+ENV MODEL_STAGE=Production
+ENV PORT=8000
+
+EXPOSE 8000
+
+# Run FastAPI app
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**What it does**:
+- ✅ Multi-stage build for smaller image
+- ✅ Installs all dependencies from `requirements.txt`
+- ✅ Copies FastAPI application
+- ✅ Sets up MLflow model registry path
+- ✅ Runs FastAPI with uvicorn
+
+**File**: `Dockerfile`
+
+#### Step 4: Working docker-compose Definition
+
+**Implementation**: `docker-compose.yml` - Service orchestration.
+
+**Concrete Implementation**:
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  credit-scoring-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: credit-scoring-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=file:./mlruns
+      - MODEL_NAME=credit_scoring_model
+      - MODEL_STAGE=Production
+      - PORT=8000
+    volumes:
+      - ./mlruns:/app/mlruns  # Mount MLflow registry
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+**What it does**:
+- ✅ Builds Docker image from Dockerfile
+- ✅ Exposes port 8000
+- ✅ Mounts MLflow registry volume
+- ✅ Sets environment variables for model loading
+- ✅ Health check configured
+
+**File**: `docker-compose.yml`
+
+**Usage**:
+```bash
+# Build and run
+docker-compose up --build
+
+# Run in background
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+```
+
+#### Step 5: CI Workflow with Linting and pytest (Fails on Errors)
+
+**Implementation**: `.github/workflows/ci.yml` - GitHub Actions workflow.
+
+**Concrete Implementation**:
+```yaml
+# .github/workflows/ci.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run flake8 linter
+        run: |
+          # Fail on syntax errors
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Check code style
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      
+      - name: Run pytest
+        run: |
+          pytest tests/ -v --tb=short
+```
+
+**What it does**:
+- ✅ Triggers on push to `main` branch
+- ✅ Runs **flake8 linter** - **FAILS on syntax errors** (E9, F63, F7, F82)
+- ✅ Runs **pytest** - **FAILS if tests fail**
+- ✅ Build fails if either step fails (no `continue-on-error: true`)
+
+**File**: `.github/workflows/ci.yml`
+
+**Verification**:
+- Push code with syntax error → CI fails ✅
+- Push code with failing test → CI fails ✅
+- Push code with linting issues → CI fails ✅
+
+#### Complete Workflow
+
+```bash
+# 1. Build and run API with Docker
+docker-compose up --build
+
+# 2. Test API endpoint
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"features": [0.0, -0.046, -0.072, -0.349, -0.045, -2.156, -0.101, 0.849, -0.994, -0.006, 0.853, 0.170, -0.068, -0.312, -0.167, 0.164, -0.193, -0.025, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}'
+
+# 3. View API documentation
+# Open http://localhost:8000/docs
+
+# 4. CI/CD automatically runs on push
+git push origin main
+# GitHub Actions runs flake8 and pytest, fails on errors
+```
+
+#### Verification
+
+**Check FastAPI app loads MLflow model**:
+```python
+# Test that model loads from MLflow
+import mlflow
+mlflow.set_tracking_uri("file:./mlruns")
+model = mlflow.sklearn.load_model("models:/credit_scoring_model/Production")
+assert model is not None
+```
+
+**Check /predict endpoint**:
+```bash
+# Test endpoint
+curl http://localhost:8000/predict \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"features": [...]}'
+# Should return: {"prediction": 0, "probability": 0.15, "risk_level": "low"}
+```
+
+**Check Docker build**:
+```bash
+docker build -t credit-scoring-api .
+docker run -p 8000:8000 credit-scoring-api
+# Should start FastAPI app
+```
+
+**Check CI/CD workflow**:
+```bash
+# View workflow runs in GitHub
+# .github/workflows/ci.yml should show:
+# - flake8 step (fails on errors)
+# - pytest step (fails on errors)
+```
+
+**Files**: 
+- `src/api/main.py` - FastAPI app loading MLflow model
+- `src/api/pydantic_models.py` - Pydantic request/response schemas
+- `Dockerfile` - Working Docker definition
+- `docker-compose.yml` - Working docker-compose definition
+- `.github/workflows/ci.yml` - CI workflow with linting and pytest (fails on errors)
 
 **Documentation**: `docs/api_deployment.md`, `docs/docker_testing_guide.md`
-
-**Test API**:
-```bash
-python examples/test_api.py
-# Or
-./scripts/test_docker_compose.sh
-```
 
 ---
 
