@@ -1,2 +1,25 @@
-# docker-compose.yml
+version: '3.8'
 
+services:
+  credit-scoring-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: credit-scoring-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=file:./mlruns
+      - MODEL_NAME=credit_scoring_model
+      - MODEL_STAGE=Production
+      - PORT=8000
+    volumes:
+      # Mount MLflow runs directory to persist model registry
+      - ./mlruns:/app/mlruns
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
