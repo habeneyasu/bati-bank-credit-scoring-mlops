@@ -12,11 +12,11 @@ But there was a catch. A big one.
 
 "How do we assess credit risk," the project manager asked, "when we have no historical default data? No payment records. No credit history. Just... transactions."
 
-This question would define the next several weeks of work. This is the story of how we built a production-ready credit scoring model from scratch, using only behavioral transaction data, and deployed it with a complete MLOps pipeline.
+This question would define our entire project. This is the story of how we built a production-ready credit scoring model from scratch, using only behavioral transaction data, and deployed it with a complete MLOps pipeline.
 
 ---
 
-## Chapter 1: Understanding the Problem (Week 1)
+## Chapter 1: Understanding the Problem
 
 ### The Regulatory Landscape
 
@@ -79,11 +79,11 @@ This two-model strategy would allow us to meet regulatory requirements while ens
 
 ---
 
-## Chapter 2: Exploring the Data (Week 2)
+## Chapter 2: Exploring the Data
 
 ### First Glimpse: What We Were Working With
 
-The dataset arrived on a Monday morning. 95,662 transactions. 16 features. 90 days of history (November 15, 2018 to February 13, 2019). No missing values—a rare gift in the world of data science.
+The dataset arrived. 95,662 transactions. 16 features. 90 days of history (November 15, 2018 to February 13, 2019). No missing values—a rare gift in the world of data science.
 
 ![Dataset Overview](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/notebooks/eda_outputs/data_overview.png?raw=true)
 
@@ -149,7 +149,7 @@ The data quality issue with ProviderId_2 (only 18 transactions, 0.02%) was a red
 
 ### The Five Critical Insights
 
-By the end of Week 2, we had identified five insights that would guide our entire modeling approach:
+After comprehensive analysis, we had identified five insights that would guide our entire modeling approach:
 
 1. **Feature Redundancy**: Amount and Value correlation (0.99) → Remove Amount
 2. **Outlier Presence**: 25.55% outliers in Amount → Use RobustScaler
@@ -161,7 +161,7 @@ These insights weren't just observations—they were the blueprint for our featu
 
 ---
 
-## Chapter 3: Building the Foundation (Week 3)
+## Chapter 3: Building the Foundation
 
 ### The Feature Engineering Pipeline
 
@@ -193,7 +193,7 @@ The pipeline was built using `sklearn.Pipeline`, ensuring every transformation w
 
 ### The Proxy Target Variable: RFM Analysis
 
-Week 3 brought us to the heart of the challenge: creating the proxy target variable. This would be the "ground truth" our models would learn from.
+This brought us to the heart of the challenge: creating the proxy target variable. This would be the "ground truth" our models would learn from.
 
 **Step 1: Calculating RFM Metrics**
 
@@ -227,13 +227,13 @@ This binary target would become the foundation for all our models. It wasn't per
 
 ### Integrating the Target
 
-The final step of Week 3 was integration. We merged the `is_high_risk` target variable into our processed feature dataset, creating `processed_data_with_target.csv`. This file would be the input for all model training.
+The final step was integration. We merged the `is_high_risk` target variable into our processed feature dataset, creating `processed_data_with_target.csv`. This file would be the input for all model training.
 
 The dataset was ready. The features were engineered. The target was created. Now came the real test: building models that could learn from this proxy target and make accurate predictions.
 
 ---
 
-## Chapter 4: Training the Models (Week 4)
+## Chapter 4: Training the Models
 
 ### The Data Split: Setting the Stage
 
@@ -331,7 +331,7 @@ The MLflow UI became our command center. We could compare models side-by-side, a
 
 ---
 
-## Chapter 5: Deployment and Automation (Week 5)
+## Chapter 5: Deployment and Automation
 
 ### Building the API
 
