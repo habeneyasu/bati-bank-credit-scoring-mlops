@@ -640,8 +640,24 @@ pytest tests/test_model_training.py::TestModelTrainer::test_train_and_evaluate -
 pytest tests/test_model_training.py::TestModelTrainer::test_train_multiple_models -v
 ```
 
-#### Complete Workflow
+#### Complete Training Script
 
+**Main Script**: `examples/complete_training_script.py` - Performs all required steps in one script.
+
+**What it does**:
+1. ✅ Reproducible train/test split (random_state=42)
+2. ✅ Trains at least 2 models (Logistic Regression, Random Forest)
+3. ✅ Computes all metrics: Accuracy, Precision, Recall, F1, ROC-AUC
+4. ✅ Runs Grid Search hyperparameter tuning
+5. ✅ Runs Random Search hyperparameter tuning
+6. ✅ Logs everything to MLflow (parameters, metrics, artifacts)
+
+**Run the complete script**:
+```bash
+python examples/complete_training_script.py
+```
+
+**Alternative: Step-by-step workflow**:
 ```bash
 # 1. Prepare data splits (reproducible with random_state=42)
 python examples/prepare_data_splits.py
