@@ -319,15 +319,19 @@ The grid search was exhaustive. 5-fold cross-validation. ROC-AUC as the scoring 
 
 Every model run was logged to MLflow. Parameters, metrics, artifacts—everything. This wasn't just tracking—it was documentation. It was reproducibility. It was the foundation for model versioning and deployment.
 
-![MLflow Experiment Tracking](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/mlflow_experiments.png?raw=true)
+**MLflow Experiment Tracking Interface**
 
 *Figure 6: MLflow experiment tracking interface showing all model runs. Each run includes parameters, metrics, and artifacts. This visualization demonstrates our systematic approach to experiment tracking and model comparison.*
 
+*To view: Run `mlflow ui --backend-store-uri file:./mlruns` and navigate to the experiments page. The interface displays all model runs with their parameters, metrics, and artifacts organized in a searchable table format.*
+
 The MLflow UI became our command center. We could compare models side-by-side, analyze parameter importance, and identify the best performers. The best model—Random Forest with ROC-AUC 0.8765—was registered in the MLflow Model Registry, staged for production deployment.
 
-![MLflow Model Comparison](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/mlflow_comparison.png?raw=true)
+**MLflow Model Comparison Chart**
 
 *Figure 7: MLflow model comparison chart showing ROC-AUC scores across all models. Random Forest (0.8765) emerges as the best performer, while Logistic Regression (0.8234) provides the best balance of performance and interpretability.*
+
+*To view: In MLflow UI, select multiple runs and click "Compare". The comparison view shows side-by-side metrics, parameter differences, and performance charts. This allows easy identification of the best performing models.*
 
 ---
 
@@ -365,9 +369,11 @@ The API needed to be deployable anywhere. Docker was the answer. We created a mu
 
 The containerization process was smooth. Build. Test. Deploy. The API ran consistently across environments—development, staging, and production.
 
-![Docker Deployment](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/docker_deployment.png?raw=true)
+**Docker Container Deployment**
 
 *Figure 8: Docker container running the FastAPI service. The container includes all dependencies, the trained model, and the API code. This visualization demonstrates our containerized deployment approach.*
+
+*To view: Run `docker ps` after starting the service with `docker-compose up`. The output shows the running container with its status, ports, and container ID. The service is accessible at http://localhost:8000.*
 
 ### CI/CD: Automation and Quality Assurance
 
@@ -620,11 +626,11 @@ curl -X POST http://localhost:8000/predict \
 
 ### C. MLflow Model Registry
 
-![MLflow Model Registry](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/mlflow_registry.png?raw=true)
+**MLflow Model Registry Interface**
 
 *Figure 10: MLflow Model Registry showing the best model (Random Forest) staged for production. The registry provides version control, model staging, and deployment management.*
 
-**Note**: For images that don't exist yet (MLflow screenshots, Docker, CI/CD), please add them to the `report_images/` folder in your repository. The links are already configured to work once the images are added.
+*To view: In MLflow UI, navigate to the "Models" tab. The registry displays all registered models with their versions, stages (None, Staging, Production, Archived), and metadata. Models can be transitioned between stages for deployment management.*
 
 ### D. CI/CD Pipeline Details
 
