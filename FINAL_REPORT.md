@@ -620,7 +620,7 @@ curl -X POST http://localhost:8000/predict \
 
 ### C. MLflow Model Registry
 
-![MLflow Model Registry](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/report_images/mlflow_registry.png?raw=true)
+![MLflow Model Registry](https://github.com/habeneyasu/bati-bank-credit-scoring-mlops/blob/main/notebooks/eda_outputs/mlflow_registry.png?raw=true)
 
 *Figure 10: MLflow Model Registry showing the best model (Random Forest) staged for production. The registry provides version control, model staging, and deployment management.*
 
