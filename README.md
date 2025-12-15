@@ -147,38 +147,188 @@ processed_df = processor.process_step_by_step(df)
 
 **Objective**: Create credit risk target variable using RFM analysis and clustering.
 
-**Implementation Steps**:
+**Challenge Requirement**: Compute RFM per customer, perform 3-cluster K-Means, derive `is_high_risk` flag, and merge target into processed modeling dataset.
 
-1. **Calculate RFM Metrics**: Recency, Frequency, Monetary for each customer
-   ```python
-   from src.rfm_calculator import RFMCalculator
-   calculator = RFMCalculator(customer_col='CustomerId', ...)
-   rfm_metrics = calculator.calculate_rfm(transactions_df)
-   ```
+#### Step 1: Calculate RFM Metrics Per Customer
 
-2. **Cluster Customers**: K-Means clustering (3 clusters) on scaled RFM features
-   ```python
-   from src.customer_clustering import CustomerClustering
-   clustering = CustomerClustering(n_clusters=3, random_state=42)
-   rfm_with_clusters = clustering.cluster_customers(rfm_metrics)
-   ```
+**Implementation**: `src/rfm_calculator.py` - Calculates Recency, Frequency, and Monetary metrics **for each CustomerId**.
 
-3. **Create High-Risk Label**: Identify least engaged cluster as high-risk
-   ```python
-   from src.high_risk_labeling import HighRiskLabeler
-   labeler = HighRiskLabeler()
-   rfm_with_target = labeler.create_target_variable(rfm_with_clusters)
-   ```
+**Concrete Implementation**:
+```python
+from src.rfm_calculator import RFMCalculator
+import pandas as pd
 
-4. **Integrate Target**: Merge `is_high_risk` into processed dataset
+# Load transaction data
+df = pd.read_csv('data/raw/data.csv')
+
+# Calculate RFM per customer
+calculator = RFMCalculator(
+    customer_col='CustomerId',
+    datetime_col='TransactionStartTime',
+    amount_col='Amount',
+    snapshot_date=None  # Uses max date in data
+)
+
+# This computes RFM for EACH CustomerId
+rfm_metrics = calculator.calculate_rfm(df)
+# Output: DataFrame with columns [CustomerId, recency, frequency, monetary]
+# Each row = one customer with their RFM metrics
+```
+
+**What it does**:
+- **Recency**: Days since last transaction (per customer)
+- **Frequency**: Total transaction count (per customer)
+- **Monetary**: Sum of transaction amounts (per customer)
+
+**Run**: `python examples/step1_calculate_rfm.py` → Creates `data/processed/rfm_metrics.csv`
+
+#### Step 2: 3-Cluster K-Means Clustering
+
+**Implementation**: `src/customer_clustering.py` - Performs **exactly 3-cluster K-Means** on scaled RFM features.
+
+**Concrete Implementation**:
+```python
+from src.customer_clustering import CustomerClustering
+import pandas as pd
+
+# Load RFM metrics
+rfm_metrics = pd.read_csv('data/processed/rfm_metrics.csv')
+
+# Perform 3-cluster K-Means
+clustering = CustomerClustering(
+    n_clusters=3,  # Exactly 3 clusters as required
+    scaling_method='standardize',  # Pre-process RFM features
+    random_state=42  # Reproducibility
+)
+
+# Fit and assign clusters
+rfm_with_clusters = clustering.cluster_customers(rfm_metrics)
+# Output: DataFrame with columns [CustomerId, recency, frequency, monetary, cluster]
+# Each customer assigned to cluster 0, 1, or 2
+```
+
+**What it does**:
+- Scales RFM features (standardize/robust)
+- Fits K-Means with `n_clusters=3`
+- Assigns each customer to one of 3 clusters
+
+**Run**: `python examples/step2_cluster_customers.py` → Creates `data/processed/rfm_with_clusters.csv`
+
+#### Step 3: Derive `is_high_risk` Flag
+
+**Implementation**: `src/high_risk_labeling.py` - Creates binary `is_high_risk` column (1 = high-risk, 0 = low-risk).
+
+**Concrete Implementation**:
+```python
+from src.high_risk_labeling import HighRiskLabeler
+import pandas as pd
+
+# Load clustered RFM data
+rfm_with_clusters = pd.read_csv('data/processed/rfm_with_clusters.csv')
+
+# Identify high-risk cluster (least engaged)
+labeler = HighRiskLabeler()
+high_risk_cluster = labeler.identify_high_risk_cluster(rfm_with_clusters)
+
+# Create is_high_risk flag
+rfm_with_target = labeler.create_target_variable(rfm_with_clusters)
+# Output: DataFrame with columns [CustomerId, recency, frequency, monetary, cluster, is_high_risk]
+# is_high_risk = 1 for high-risk cluster, 0 for others
+```
+
+**What it does**:
+- Analyzes clusters to find least engaged (high recency, low frequency, low monetary)
+- Creates `is_high_risk` binary column:
+  - `is_high_risk = 1`: Customers in high-risk cluster
+  - `is_high_risk = 0`: Customers in other clusters
+
+**Run**: `python examples/step3_create_high_risk_target.py` → Creates `data/processed/rfm_with_target.csv` and `data/processed/transactions_with_target.csv`
+
+#### Step 4: Merge Target into Processed Modeling Dataset
+
+**Implementation**: `examples/integrate_target_to_processed_data.py` - Merges `is_high_risk` into feature-engineered dataset.
+
+**Concrete Implementation**:
+```python
+import pandas as pd
+
+# Load processed features (from Task 3)
+processed_df = pd.read_csv('data/processed/processed_data.csv')
+
+# Load transactions with target (from Step 3)
+transactions_with_target = pd.read_csv('data/processed/transactions_with_target.csv')
+
+# Merge is_high_risk into processed dataset
+processed_df['is_high_risk'] = transactions_with_target['is_high_risk'].values
+
+# Save final dataset ready for modeling
+processed_df.to_csv('data/processed/processed_data_with_target.csv', index=False)
+```
+
+**What it does**:
+- Takes feature-engineered data from Task 3
+- Adds `is_high_risk` target column
+- Creates final dataset: `processed_data_with_target.csv` ready for model training
+
+**Run**: `python examples/integrate_target_to_processed_data.py` → Creates `data/processed/processed_data_with_target.csv`
+
+#### Complete Workflow
+
+```bash
+# Step 1: Calculate RFM per customer
+python examples/step1_calculate_rfm.py
+# Output: data/processed/rfm_metrics.csv (RFM per CustomerId)
+
+# Step 2: 3-cluster K-Means
+python examples/step2_cluster_customers.py
+# Output: data/processed/rfm_with_clusters.csv (3 clusters assigned)
+
+# Step 3: Create is_high_risk flag
+python examples/step3_create_high_risk_target.py
+# Output: data/processed/rfm_with_target.csv (with is_high_risk column)
+
+# Step 4: Merge into processed dataset
+python examples/integrate_target_to_processed_data.py
+# Output: data/processed/processed_data_with_target.csv (ready for training)
+```
+
+#### Verification
+
+**Check RFM per customer**:
+```python
+rfm = pd.read_csv('data/processed/rfm_metrics.csv')
+print(rfm.head())  # Shows CustomerId, recency, frequency, monetary
+print(f"Total customers: {len(rfm)}")  # One row per customer
+```
+
+**Check 3 clusters**:
+```python
+clustered = pd.read_csv('data/processed/rfm_with_clusters.csv')
+print(clustered['cluster'].value_counts())  # Should show 3 clusters
+print(f"Clusters: {clustered['cluster'].unique()}")  # [0, 1, 2]
+```
+
+**Check is_high_risk flag**:
+```python
+target = pd.read_csv('data/processed/rfm_with_target.csv')
+print(target['is_high_risk'].value_counts())  # Binary: 0 and 1
+```
+
+**Check merged dataset**:
+```python
+final = pd.read_csv('data/processed/processed_data_with_target.csv')
+print('is_high_risk' in final.columns)  # True
+print(final['is_high_risk'].value_counts())  # Target distribution
+```
 
 **Files**: 
-- `src/rfm_calculator.py`
-- `src/customer_clustering.py`
-- `src/high_risk_labeling.py`
-- `examples/step1_calculate_rfm.py`
-- `examples/step2_cluster_customers.py`
-- `examples/step3_create_high_risk_target.py`
+- `src/rfm_calculator.py` - RFM calculation per customer
+- `src/customer_clustering.py` - 3-cluster K-Means implementation
+- `src/high_risk_labeling.py` - is_high_risk flag creation
+- `examples/integrate_target_to_processed_data.py` - Target merging
+- `examples/step1_calculate_rfm.py` - RFM calculation script
+- `examples/step2_cluster_customers.py` - Clustering script
+- `examples/step3_create_high_risk_target.py` - Target creation script
 
 **Documentation**: `docs/step1_rfm_calculation.md`, `docs/step2_customer_clustering.md`, `docs/step3_high_risk_target.md`
 
