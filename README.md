@@ -80,6 +80,8 @@ When traditional credit data is unavailable, **customer engagement patterns** se
 - [ ] Docker installed (for containerized deployment) - *Optional*
 - [ ] 4GB+ RAM available
 - [ ] Virtual environment support (venv or conda)
+- [ ] Kaggle account (for dataset access)
+- [ ] Dataset downloaded and placed in `data/raw/` directory
 
 ---
 
@@ -91,7 +93,38 @@ This project uses the **Xente Transaction Dataset** from Kaggle:
 - **16 original features** expanded to **26 engineered features**
 - **11,000+ unique customers**
 
+**⚠️ Important**: The dataset is **not included** in this repository (data files are in `.gitignore` for privacy and size reasons). You need to download it separately.
+
 **Dataset Source**: [Xente Challenge | Kaggle](https://www.kaggle.com/datasets/atwine/xente-challenge)
+
+### Setting Up the Data
+
+1. **Download the dataset** from Kaggle:
+   ```bash
+   # Option 1: Using Kaggle API
+   kaggle datasets download -d atwine/xente-challenge
+   unzip xente-challenge.zip
+   
+   # Option 2: Manual download from Kaggle website
+   # Visit: https://www.kaggle.com/datasets/atwine/xente-challenge
+   ```
+
+2. **Create data directory structure**:
+   ```bash
+   mkdir -p data/raw data/processed
+   ```
+
+3. **Place the dataset**:
+   ```bash
+   # Copy the downloaded CSV file to data/raw/
+   cp <downloaded_file>.csv data/raw/data.csv
+   ```
+
+4. **Verify the data**:
+   ```bash
+   # Check file exists
+   ls -lh data/raw/data.csv
+   ```
 
 ---
 
@@ -113,6 +146,8 @@ pip install -r requirements.txt
 ```
 
 ### Run Complete Pipeline
+
+**Before starting**: Ensure you have downloaded the dataset and placed it in `data/raw/data.csv` (see Dataset section above).
 
 ```bash
 # 1. Calculate RFM and create target variable
@@ -268,7 +303,9 @@ bati-bank-credit-scoring-mlops/
 ├── examples/              # Example scripts and workflows
 ├── tests/                 # Unit tests
 ├── notebooks/             # EDA and analysis
-├── data/                  # Data files (raw and processed)
+├── data/                  # Data files (raw and processed) - NOT in repository
+│   ├── raw/              # Place downloaded dataset here (gitignored)
+│   └── processed/        # Generated processed files (gitignored)
 ├── mlruns/               # MLflow experiment tracking
 ├── docs/                 # Documentation
 ├── Dockerfile            # Docker configuration
