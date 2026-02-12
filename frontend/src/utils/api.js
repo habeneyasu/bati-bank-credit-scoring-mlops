@@ -40,6 +40,36 @@ export const creditScoringAPI = {
     const response = await api.get('/health');
     return response.data;
   },
+
+  // Get fairness analysis
+  async getFairnessAnalysis() {
+    const response = await api.get('/api/fairness');
+    return response.data;
+  },
+
+  // Get all versions
+  async getVersions() {
+    const response = await api.get('/api/versions');
+    return response.data;
+  },
+
+  // Get model versions
+  async getModelVersions() {
+    const response = await api.get('/api/versions/model');
+    return response.data;
+  },
+
+  // Get data versions
+  async getDataVersions() {
+    const response = await api.get('/api/versions/data');
+    return response.data;
+  },
+
+  // Get current versions
+  async getCurrentVersions() {
+    const response = await api.get('/api/versions/current');
+    return response.data;
+  },
 };
 
 export default creditScoringAPI;

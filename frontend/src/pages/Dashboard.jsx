@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Brain, BarChart3, Zap, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { TrendingUp, Brain, BarChart3, Zap, AlertCircle, CheckCircle, XCircle, FileText, Shield, X, GitBranch } from 'lucide-react';
 import FeatureInputForm from '../components/FeatureInputForm';
 import PredictionResult from '../components/PredictionResult';
 import ExplanationPanel from '../components/ExplanationPanel';
 import ScenarioTester from '../components/ScenarioTester';
+import ModelCard from '../components/ModelCard';
+import FairnessAnalysis from '../components/FairnessAnalysis';
+import VersionInfo from '../components/VersionInfo';
 import { creditScoringAPI } from '../utils/api';
 
 const Dashboard = () => {
@@ -14,6 +17,8 @@ const Dashboard = () => {
   const [explanation, setExplanation] = useState(null);
   const [activeTab, setActiveTab] = useState('predict');
   const [apiStatus, setApiStatus] = useState('checking');
+  const [showGovernance, setShowGovernance] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
 
   useEffect(() => {
     loadFeatureNames();
@@ -124,12 +129,31 @@ const Dashboard = () => {
                 Interactive tool for loan officers and credit analysts
               </p>
             </div>
-            <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg">
-              {getStatusIcon()}
-              <span className="font-semibold">
-                {apiStatus === 'healthy' ? 'System Online' : 
-                 apiStatus === 'degraded' ? 'Degraded' : 'Offline'}
-              </span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg">
+                {getStatusIcon()}
+                <span className="font-semibold">
+                  {apiStatus === 'healthy' ? 'System Online' : 
+                   apiStatus === 'degraded' ? 'Degraded' : 'Offline'}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowGovernance(!showGovernance)}
+                className="bg-white/20 backdrop-blur-sm hover:bg-white/30 px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+              >
+                <FileText className="w-5 h-5" />
+                <span className="font-semibold">Governance</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowVersions(!showVersions);
+                  if (!showVersions) setShowGovernance(false);
+                }}
+                className="bg-white/20 backdrop-blur-sm hover:bg-white/30 px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+              >
+                <GitBranch className="w-5 h-5" />
+                <span className="font-semibold">Versions</span>
+              </button>
             </div>
           </div>
         </div>
@@ -137,6 +161,43 @@ const Dashboard = () => {
 
       {/* Main Content */}
       <div className="container mx-auto px-6 py-8">
+        {/* Governance Section */}
+        {showGovernance && (
+          <div className="mb-8 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-3xl font-bold text-slate-800">Model Governance</h2>
+              <button
+                onClick={() => setShowGovernance(false)}
+                className="text-slate-600 hover:text-slate-800 p-2 hover:bg-white/20 rounded-lg transition-all"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-6">
+              <ModelCard />
+              <FairnessAnalysis />
+            </div>
+          </div>
+        )}
+
+        {/* Versions Section */}
+        {showVersions && (
+          <div className="mb-8 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-3xl font-bold text-slate-800">Version Information</h2>
+              <button
+                onClick={() => setShowVersions(false)}
+                className="text-slate-600 hover:text-slate-800 p-2 hover:bg-white/20 rounded-lg transition-all"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <VersionInfo />
+          </div>
+        )}
+
+        {/* Prediction Dashboard */}
+        {!showGovernance && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Feature Input */}
           <div className="lg:col-span-1">
@@ -268,6 +329,7 @@ const Dashboard = () => {
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
