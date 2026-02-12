@@ -278,6 +278,124 @@ class TestAPIRiskLevels:
             data = response.json()
             assert data["risk_level"] == "high"
             assert data["probability"] == 0.8
+    
+    def test_predict_with_explanation(self, api_client: TestClient,
+                                      sample_prediction_request: dict,
+                                      mock_model):
+        """Test prediction with explanation requested."""
+        from unittest.mock import Mock as MockExplainer
+        
+        mock_explainer = MockExplainer()
+        mock_explainer.explain_instance.return_value = {
+            "shap_values": [0.1, -0.05, 0.02, 0.0] * 6 + [0.0, 0.0],
+            "base_value": 0.25,
+            "feature_names": [f"feature_{i}" for i in range(26)],
+            "feature_importance": [
+                {"feature": f"feature_{i}", "shap_value": 0.1, "feature_value": 0.5}
+                for i in range(26)
+            ],
+            "prediction": 0,
+            "probability": 0.15,
+            "explanation_summary": "Prediction: Low Risk (Probability: 15.00%). Key factors: ..."
+        }
+        
+        request_with_explanation = sample_prediction_request.copy()
+        request_with_explanation["include_explanation"] = True
+        
+        with patch('src.api.main.model', mock_model):
+            with patch('src.api.main.explainer', mock_explainer):
+                response = api_client.post("/predict", json=request_with_explanation)
+                assert response.status_code == status.HTTP_200_OK
+                data = response.json()
+                assert "explanation" in data
+                assert data["explanation"] is not None
+                assert "feature_importance" in data["explanation"]
+    
+    def test_explain_endpoint_success(self, api_client: TestClient,
+                                     sample_prediction_request: dict,
+                                     mock_model):
+        """Test explain endpoint returns SHAP explanation."""
+        from unittest.mock import Mock as MockExplainer
+        
+        mock_explainer = MockExplainer()
+        mock_explainer.explain_instance.return_value = {
+            "shap_values": [0.1, -0.05, 0.02, 0.0] * 6 + [0.0, 0.0],
+            "base_value": 0.25,
+            "feature_names": [f"feature_{i}" for i in range(26)],
+            "feature_importance": [
+                {"feature": f"feature_{i}", "shap_value": 0.1, "feature_value": 0.5}
+                for i in range(26)
+            ],
+            "prediction": 0,
+            "probability": 0.15,
+            "explanation_summary": "Prediction: Low Risk (Probability: 15.00%). Key factors: ..."
+        }
+        
+        with patch('src.api.main.model', mock_model):
+            with patch('src.api.main.explainer', mock_explainer):
+                response = api_client.post("/explain", json=sample_prediction_request)
+                assert response.status_code == status.HTTP_200_OK
+                data = response.json()
+                assert "prediction" in data
+                assert "probability" in data
+                assert "base_value" in data
+                assert "explanation_summary" in data
+                assert "feature_importance" in data
+                assert "shap_values" in data
+                assert "feature_names" in data
+                assert len(data["feature_importance"]) == 26
+    
+    def test_explain_endpoint_missing_model(self, api_client: TestClient,
+                                            sample_prediction_request: dict):
+        """Test explain endpoint when model is not loaded."""
+        with patch('src.api.main.model', None):
+            response = api_client.post("/explain", json=sample_prediction_request)
+            assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    
+    def test_explain_endpoint_missing_explainer(self, api_client: TestClient,
+                                                sample_prediction_request: dict,
+                                                mock_model):
+        """Test explain endpoint when explainer is not initialized."""
+        with patch('src.api.main.model', mock_model):
+            with patch('src.api.main.explainer', None):
+                response = api_client.post("/explain", json=sample_prediction_request)
+                assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+                assert "explainer" in response.json()["detail"].lower()
+    
+    def test_explain_endpoint_with_plot(self, api_client: TestClient,
+                                       sample_prediction_request: dict,
+                                       mock_model):
+        """Test explain endpoint with waterfall plot requested."""
+        from unittest.mock import Mock as MockExplainer
+        
+        mock_explainer = MockExplainer()
+        mock_explainer.explain_instance.return_value = {
+            "shap_values": [0.1, -0.05, 0.02, 0.0] * 6 + [0.0, 0.0],
+            "base_value": 0.25,
+            "feature_names": [f"feature_{i}" for i in range(26)],
+            "feature_importance": [
+                {"feature": f"feature_{i}", "shap_value": 0.1, "feature_value": 0.5}
+                for i in range(26)
+            ],
+            "prediction": 0,
+            "probability": 0.15,
+            "explanation_summary": "Prediction: Low Risk (Probability: 15.00%). Key factors: ..."
+        }
+        mock_explainer.plot_waterfall.return_value = "base64_encoded_image_data"
+        
+        with patch('src.api.main.model', mock_model):
+            with patch('src.api.main.explainer', mock_explainer):
+                response = api_client.post(
+                    "/explain",
+                    json=sample_prediction_request,
+                    params={"include_plot": True}
+                )
+                assert response.status_code == status.HTTP_200_OK
+                data = response.json()
+                assert "waterfall_plot" in data
+                # Plot may be None if matplotlib not available
+                if data["waterfall_plot"] is not None:
+                    assert isinstance(data["waterfall_plot"], str)
 
 
 if __name__ == "__main__":

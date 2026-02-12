@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Scoring Dashboard - Bati Bank</title>
+    <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏦 Credit Risk Scoring Dashboard</h1>
+            <p>Interactive tool for loan officers and credit analysts to assess customer credit risk</p>
+        </header>
+
+        <div class="dashboard-grid">
+            <!-- Feature Input Section -->
+            <div class="card">
+                <h2>Customer Features</h2>
+                <div id="feature-inputs">
+                    <!-- Feature inputs will be dynamically generated -->
+                </div>
+                <div class="button-group">
+                    <button id="load-sample-btn" class="btn btn-secondary">Load Sample Data</button>
+                    <button id="clear-btn" class="btn btn-secondary">Clear Form</button>
+                </div>
+            </div>
+
+            <!-- Actions Section -->
+            <div class="card">
+                <h2>Actions</h2>
+                <div class="button-group">
+                    <button id="predict-btn" class="btn btn-primary">Get Prediction</button>
+                    <button id="explain-btn" class="btn btn-success">Explain Prediction</button>
+                    <button id="scenario-test-btn" class="btn btn-secondary">Test Scenario</button>
+                </div>
+                
+                <div id="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Processing...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Prediction Result -->
+        <div id="prediction-result" style="display: none;"></div>
+
+        <!-- Explanation Result -->
+        <div id="explanation-result" style="display: none;"></div>
+    </div>
+
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>

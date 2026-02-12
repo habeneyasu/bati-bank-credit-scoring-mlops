@@ -5,7 +5,7 @@ These models ensure data integrity and provide clear API documentation.
 """
 
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 
 class PredictionRequest(BaseModel):
@@ -36,6 +36,11 @@ class PredictionRequest(BaseModel):
         examples=[[0.0, -0.046, -0.072, -0.349, -0.045, -2.156, -0.101, 0.849, -0.994, 
                   -0.006, 0.853, 0.170, -0.068, -0.312, -0.167, 0.164, -0.193, -0.025,
                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+    )
+    
+    include_explanation: bool = Field(
+        default=False,
+        description="Whether to include SHAP explanation in the response"
     )
 
 
@@ -74,6 +79,11 @@ class PredictionResponse(BaseModel):
         ...,
         description="Human-readable risk level: 'low', 'medium', or 'high'"
     )
+    
+    explanation: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="SHAP explanation of the prediction (if requested)"
+    )
 
 
 class HealthResponse(BaseModel):
@@ -94,3 +104,82 @@ class HealthResponse(BaseModel):
     model_loaded: bool = Field(..., description="Whether model is loaded")
     model_name: Optional[str] = Field(None, description="Name of loaded model")
     model_version: Optional[str] = Field(None, description="Version of loaded model")
+
+
+class FeatureImportance(BaseModel):
+    """Model for feature importance in explanations."""
+    
+    feature: str = Field(..., description="Feature name")
+    shap_value: float = Field(..., description="SHAP value for this feature")
+    feature_value: float = Field(..., description="Actual feature value")
+
+
+class ExplanationResponse(BaseModel):
+    """
+    Response model for model explanation endpoint.
+    
+    Provides SHAP-based explanations for model predictions to meet
+    regulatory transparency requirements (CFPB, EU AI Act).
+    """
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "prediction": 0,
+                "probability": 0.15,
+                "base_value": 0.25,
+                "explanation_summary": "Prediction: Low Risk (Probability: 15.00%). Key factors: ...",
+                "feature_importance": [
+                    {
+                        "feature": "feature_1",
+                        "shap_value": -0.05,
+                        "feature_value": 0.5
+                    }
+                ]
+            }
+        }
+    )
+    
+    prediction: int = Field(
+        ...,
+        description="Binary prediction: 0 (low-risk) or 1 (high-risk)",
+        ge=0,
+        le=1
+    )
+    
+    probability: float = Field(
+        ...,
+        description="Probability of high-risk (is_high_risk=1), range [0, 1]",
+        ge=0.0,
+        le=1.0
+    )
+    
+    base_value: float = Field(
+        ...,
+        description="Base/expected value from SHAP explainer"
+    )
+    
+    explanation_summary: str = Field(
+        ...,
+        description="Human-readable explanation summary"
+    )
+    
+    feature_importance: List[FeatureImportance] = Field(
+        ...,
+        description="List of features sorted by importance (absolute SHAP value)"
+    )
+    
+    shap_values: List[float] = Field(
+        ...,
+        description="SHAP values for all features in original order"
+    )
+    
+    feature_names: List[str] = Field(
+        ...,
+        description="Feature names in original order"
+    )
+    
+    waterfall_plot: Optional[str] = Field(
+        default=None,
+        description="Base64-encoded waterfall plot image (if requested)"
+    )
