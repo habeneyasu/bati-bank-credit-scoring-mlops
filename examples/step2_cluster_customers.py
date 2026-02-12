@@ -15,7 +15,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.customer_clustering import CustomerClustering, cluster_customers
+from src.features.clustering import CustomerClustering, cluster_customers
 
 
 def main():

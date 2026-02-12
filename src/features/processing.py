@@ -514,7 +514,7 @@ class DataProcessor:
         print("Step 6: Applying WoE transformation...")
         if self.use_woe and target is not None:
             try:
-                from src.woe_calculator import calculate_iv_for_features
+                from src.features.woe import calculate_iv_for_features
                 
                 # Select features for WoE (exclude IDs and target)
                 woe_features = [c for c in df.columns 
@@ -550,125 +550,6 @@ class DataProcessor:
     def load_processor(file_path: str) -> 'DataProcessor':
         """Load a processor from disk."""
         return joblib.load(file_path)
-
-
-    def process_step_by_step(self, df: pd.DataFrame, target: Optional[pd.Series] = None) -> pd.DataFrame:
-        """
-        Process data step by step (alternative to Pipeline approach).
-        More reliable and easier to debug.
-        
-        Args:
-            df: Input DataFrame
-            target: Target variable (optional)
-        
-        Returns:
-            Processed DataFrame
-        """
-        df = df.copy()
-        
-        print("Step 1: Extracting temporal features...")
-        temporal_extractor = TemporalFeatureExtractor(datetime_col=self.datetime_col)
-        df = temporal_extractor.transform(df)
-        
-        print("Step 2: Creating customer aggregate features...")
-        aggregator = CustomerAggregator(
-            customer_col=self.customer_col,
-            amount_col=self.amount_col
-        )
-        df = aggregator.transform(df)
-        
-        # Detect column types
-        categorical_cols, numerical_cols = self._detect_column_types(df)
-        
-        print(f"Step 3: Handling missing values ({self.imputation_method})...")
-        if self.imputation_method == 'remove':
-            df = df.dropna()
-        else:
-            # Impute numerical columns
-            if numerical_cols:
-                if self.imputation_method == 'knn':
-                    imputer = KNNImputer(n_neighbors=5)
-                    df[numerical_cols] = imputer.fit_transform(df[numerical_cols])
-                else:
-                    strategy_map = {
-                        'mean': 'mean',
-                        'median': 'median',
-                        'mode': 'most_frequent'
-                    }
-                    strategy = strategy_map.get(self.imputation_method, 'median')
-                    imputer = SimpleImputer(strategy=strategy)
-                    df[numerical_cols] = imputer.fit_transform(df[numerical_cols])
-            
-            # Impute categorical columns
-            if categorical_cols:
-                imputer = SimpleImputer(strategy='most_frequent')
-                df[categorical_cols] = imputer.fit_transform(df[categorical_cols])
-        
-        print(f"Step 4: Encoding categorical variables ({self.encoding_method})...")
-        if categorical_cols:
-            if self.encoding_method == 'onehot':
-                encoder = OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore')
-                encoded = encoder.fit_transform(df[categorical_cols])
-                encoded_df = pd.DataFrame(
-                    encoded,
-                    columns=encoder.get_feature_names_out(categorical_cols),
-                    index=df.index
-                )
-                # Drop original categorical columns and add encoded
-                df = df.drop(columns=categorical_cols)
-                df = pd.concat([df, encoded_df], axis=1)
-            else:  # label encoding
-                for col in categorical_cols:
-                    encoder = LabelEncoder()
-                    df[col] = encoder.fit_transform(df[col].astype(str))
-        
-        print(f"Step 5: Scaling numerical features ({self.scaling_method})...")
-        if numerical_cols and self.scaling_method:
-            if self.scaling_method == 'standardize':
-                scaler = StandardScaler()
-            elif self.scaling_method == 'normalize':
-                scaler = MinMaxScaler()
-            elif self.scaling_method == 'robust':
-                scaler = RobustScaler()
-            else:
-                scaler = None
-            
-            if scaler:
-                # Only scale original numerical columns (not aggregated ones)
-                original_num_cols = [c for c in numerical_cols if c in df.columns]
-                if original_num_cols:
-                    df[original_num_cols] = scaler.fit_transform(df[original_num_cols])
-        
-        print("Step 6: Applying WoE transformation...")
-        if self.use_woe and target is not None:
-            try:
-                from src.woe_calculator import calculate_iv_for_features
-                
-                # Select features for WoE (exclude IDs and target)
-                woe_features = [c for c in df.columns 
-                              if c not in [self.customer_col, self.target_col] 
-                              and 'Id' not in c 
-                              and 'id' not in c
-                              and df[c].nunique() > 5][:10]  # Limit to 10 features
-                
-                if woe_features:
-                    woe_transformer = WoETransformer(target_col=self.target_col)
-                    woe_transformer.fit(df, target)
-                    df = woe_transformer.transform(df)
-            except Exception as e:
-                warnings.warn(f"WoE transformation failed: {e}")
-        
-        # Remove ID columns
-        id_cols = [c for c in df.columns if 'Id' in c or 'id' in c or c == self.datetime_col]
-        df = df.drop(columns=[c for c in id_cols if c in df.columns])
-        
-        # Remove target if present
-        if self.target_col and self.target_col in df.columns:
-            df = df.drop(columns=[self.target_col])
-        
-        self.feature_names_ = df.columns.tolist()
-        
-        return df
 
 
 def main():

@@ -15,8 +15,8 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.model_training import train_models, ModelTrainer
-from src.data_splitting import load_splits
+from src.models.training import train_models, ModelTrainer
+from src.features.splitting import load_splits
 
 
 def main():

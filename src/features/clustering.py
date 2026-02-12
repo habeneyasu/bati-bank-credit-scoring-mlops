@@ -406,7 +406,7 @@ if __name__ == "__main__":
         print()
         print("Example usage:")
         print("""
-        from src.customer_clustering import CustomerClustering
+        from src.features.clustering import CustomerClustering
         
         # Load RFM metrics
         rfm_df = pd.read_csv('data/processed/rfm_metrics.csv')

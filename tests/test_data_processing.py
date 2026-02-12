@@ -13,13 +13,13 @@ import sys
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data_processing import (
+from src.features.processing import (
     DataProcessor,
     TemporalFeatureExtractor,
     CustomerAggregator,
     WoETransformer
 )
-from src.woe_calculator import calculate_woe_iv, calculate_iv_for_features
+from src.features.woe import calculate_woe_iv, calculate_iv_for_features
 
 
 class TestTemporalFeatureExtractor:

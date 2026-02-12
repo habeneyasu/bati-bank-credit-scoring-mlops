@@ -13,7 +13,7 @@ import sys
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.customer_clustering import CustomerClustering, cluster_customers
+from src.features.clustering import CustomerClustering, cluster_customers
 
 
 class TestCustomerClustering:

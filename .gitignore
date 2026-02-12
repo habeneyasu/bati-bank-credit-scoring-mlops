@@ -54,6 +54,7 @@ logs/
 # Environment variables
 .env
 .env.local
+.env.*
 
 # OS
 .DS_Store
@@ -67,3 +68,6 @@ mlruns/
 htmlcov/
 .pytest_cache/
 
+# Documentation (exclude all .md files except README.md)
+*.md
+!README.md

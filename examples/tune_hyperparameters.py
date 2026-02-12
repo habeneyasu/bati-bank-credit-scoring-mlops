@@ -15,9 +15,9 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.hyperparameter_tuning import HyperparameterTuner, tune_hyperparameters
-from src.data_splitting import load_splits
-from src.model_training import ModelTrainer
+from src.models.tuning import HyperparameterTuner, tune_hyperparameters
+from src.features.splitting import load_splits
+from src.models.training import ModelTrainer
 
 
 def main():
@@ -101,7 +101,7 @@ def main():
             best_cv_score = tuner.best_scores_[model_name]
             
             # Evaluate on test set
-            from src.model_training import ModelTrainer
+            from src.models.training import ModelTrainer
             temp_trainer = ModelTrainer()
             test_metrics = temp_trainer.evaluate_model(best_model, X_test, y_test, set_name='test')
             

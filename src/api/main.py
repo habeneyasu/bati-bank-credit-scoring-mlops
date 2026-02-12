@@ -5,62 +5,60 @@ This API provides endpoints for credit risk prediction using the trained model
 loaded from MLflow Model Registry.
 
 Endpoints:
+- GET /: API information
 - GET /health: Health check
+- GET /metrics: Prometheus-style metrics
 - POST /predict: Predict credit risk for customer data
 """
 
-import os
 import sys
 from pathlib import Path
-from typing import List
+from typing import Optional
+import time
 import numpy as np
-import pandas as pd
 import mlflow
 import mlflow.sklearn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-import logging
+from contextlib import asynccontextmanager
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from src.utils.config import settings
+from src.utils.logging import get_logger
+from src.utils.retry import retry
 from src.api.pydantic_models import (
     PredictionRequest,
     PredictionResponse,
     HealthResponse
 )
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Initialize logger
+logger = get_logger(__name__)
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Credit Scoring API",
-    description="API for credit risk prediction using MLflow-registered models",
-    version="1.0.0"
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, specify allowed origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Metrics storage (in production, use Prometheus client)
+metrics = {
+    "predictions_total": 0,
+    "predictions_success": 0,
+    "predictions_errors": 0,
+    "prediction_latency_seconds": [],
+    "model_load_errors": 0,
+}
 
 # Global model variable
-model = None
-model_name = None
-model_version = None
+model: Optional[object] = None
+model_name: Optional[str] = None
+model_version: Optional[str] = None
+model_load_time: Optional[float] = None
 
 
+@retry(max_attempts=3, delay=2.0, backoff=2.0, exceptions=(Exception,))
 def load_model_from_mlflow(
-    model_name: str = "credit_scoring_model",
-    stage: str = "Production"
-):
+    model_name: str,
+    stage: str
+) -> object:
     """
     Load model from MLflow Model Registry.
     
@@ -70,47 +68,120 @@ def load_model_from_mlflow(
     
     Returns:
         Loaded model object
+    
+    Raises:
+        Exception: If model loading fails
     """
     try:
         # Set MLflow tracking URI
-        mlflow_tracking_uri = os.getenv(
-            "MLFLOW_TRACKING_URI",
-            "file:./mlruns"
-        )
-        mlflow.set_tracking_uri(mlflow_tracking_uri)
+        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
         
         # Load model from registry
         model_uri = f"models:/{model_name}/{stage}"
-        logger.info(f"Loading model from: {model_uri}")
+        logger.info(
+            "Loading model from MLflow",
+            extra={"model_uri": model_uri, "model_name": model_name, "stage": stage}
+        )
         
         model = mlflow.sklearn.load_model(model_uri)
         
-        logger.info(f"Model loaded successfully: {model_name} ({stage})")
+        logger.info(
+            "Model loaded successfully",
+            extra={"model_name": model_name, "stage": stage}
+        )
         
         return model
         
     except Exception as e:
-        logger.error(f"Error loading model: {e}")
+        logger.error(
+            "Error loading model from MLflow",
+            extra={"error": str(e), "model_name": model_name, "stage": stage},
+            exc_info=True
+        )
+        metrics["model_load_errors"] += 1
         raise
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Load model on application startup."""
-    global model, model_name, model_version
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown."""
+    global model, model_name, model_version, model_load_time
+    
+    # Startup
+    logger.info("Starting Credit Scoring API", extra={"version": "1.0.0"})
     
     try:
-        model_name = os.getenv("MODEL_NAME", "credit_scoring_model")
-        model_stage = os.getenv("MODEL_STAGE", "Production")
+        model_name = settings.model_name
+        model_stage = settings.model_stage
         
+        start_time = time.time()
         model = load_model_from_mlflow(model_name, model_stage)
+        model_load_time = time.time() - start_time
         model_version = model_stage
         
-        logger.info("Model loaded successfully on startup")
+        logger.info(
+            "Model loaded successfully on startup",
+            extra={
+                "model_name": model_name,
+                "model_version": model_version,
+                "load_time_seconds": model_load_time
+            }
+        )
         
     except Exception as e:
-        logger.error(f"Failed to load model on startup: {e}")
-        logger.warning("API will start but /predict endpoint will not work until model is loaded")
+        logger.error(
+            "Failed to load model on startup",
+            extra={"error": str(e)},
+            exc_info=True
+        )
+        logger.warning(
+            "API will start but /predict endpoint will not work until model is loaded"
+        )
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down Credit Scoring API")
+
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Credit Scoring API",
+    description="API for credit risk prediction using MLflow-registered models",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if not settings.is_production else None,
+    redoc_url="/redoc" if not settings.is_production else None,
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=settings.cors_allow_credentials,
+    allow_methods=settings.cors_allow_methods,
+    allow_headers=settings.cors_allow_headers,
+)
+
+# Add custom middleware
+from src.api.middleware import (
+    RateLimitMiddleware,
+    RequestLoggingMiddleware,
+    ErrorHandlingMiddleware
+)
+
+# Add request logging middleware
+app.add_middleware(RequestLoggingMiddleware)
+
+# Add error handling middleware
+app.add_middleware(ErrorHandlingMiddleware)
+
+# Add rate limiting middleware if enabled
+if settings.enable_rate_limiting:
+    app.add_middleware(
+        RateLimitMiddleware,
+        requests_per_minute=settings.rate_limit_per_minute
+    )
 
 
 @app.get("/", tags=["General"])
@@ -119,10 +190,12 @@ async def root():
     return {
         "message": "Credit Scoring API",
         "version": "1.0.0",
+        "environment": settings.environment,
         "endpoints": {
             "health": "/health",
             "predict": "/predict",
-            "docs": "/docs"
+            "metrics": "/metrics" if settings.enable_metrics else None,
+            "docs": "/docs" if not settings.is_production else None
         }
     }
 
@@ -134,19 +207,66 @@ async def health_check():
     
     Returns the status of the API and model.
     """
-    # Access global variables (no assignment, so no 'global' needed)
-    current_model = model
-    current_model_name = model_name
-    current_model_version = model_version
+    global model, model_name, model_version
     
-    status = "healthy" if current_model is not None else "degraded"
+    status_value = "healthy" if model is not None else "degraded"
     
-    return HealthResponse(
-        status=status,
-        model_loaded=current_model is not None,
-        model_name=current_model_name if current_model is not None else None,
-        model_version=current_model_version if current_model is not None else None
+    health_data = {
+        "status": status_value,
+        "model_loaded": model is not None,
+        "model_name": model_name if model is not None else None,
+        "model_version": model_version if model is not None else None,
+    }
+    
+    if model_load_time:
+        health_data["model_load_time_seconds"] = model_load_time
+    
+    return HealthResponse(**health_data)
+
+
+@app.get("/metrics", tags=["Monitoring"])
+async def get_metrics():
+    """
+    Prometheus-style metrics endpoint.
+    
+    Returns application metrics in a format compatible with Prometheus.
+    """
+    if not settings.enable_metrics:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Metrics endpoint is disabled"
+        )
+    
+    # Calculate average latency
+    avg_latency = (
+        sum(metrics["prediction_latency_seconds"]) / len(metrics["prediction_latency_seconds"])
+        if metrics["prediction_latency_seconds"]
+        else 0.0
     )
+    
+    # Format as Prometheus metrics
+    metrics_text = f"""# HELP predictions_total Total number of predictions
+# TYPE predictions_total counter
+predictions_total {metrics['predictions_total']}
+
+# HELP predictions_success Total number of successful predictions
+# TYPE predictions_success counter
+predictions_success {metrics['predictions_success']}
+
+# HELP predictions_errors Total number of prediction errors
+# TYPE predictions_errors counter
+predictions_errors {metrics['predictions_errors']}
+
+# HELP prediction_latency_seconds Average prediction latency in seconds
+# TYPE prediction_latency_seconds gauge
+prediction_latency_seconds {avg_latency}
+
+# HELP model_load_errors Total number of model load errors
+# TYPE model_load_errors counter
+model_load_errors {metrics['model_load_errors']}
+"""
+    
+    return metrics_text
 
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
@@ -163,40 +283,88 @@ async def predict(request: PredictionRequest):
     Raises:
         HTTPException: If model is not loaded or prediction fails
     """
-    # Access global model (no assignment, so no 'global' needed)
-    current_model = model
+    global model
     
-    if current_model is None:
+    if model is None:
+        logger.error("Prediction attempted but model is not loaded")
         raise HTTPException(
-            status_code=503,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model not loaded. Please check server logs."
         )
     
+    start_time = time.time()
+    metrics["predictions_total"] += 1
+    
     try:
-        # Convert features to numpy array
-        features_array = np.array(request.features).reshape(1, -1)
-        
         # Validate feature count
-        expected_features = 26  # Based on processed data features
-        if len(request.features) != expected_features:
+        if len(request.features) != settings.expected_features:
+            logger.warning(
+                "Invalid feature count",
+                extra={
+                    "expected": settings.expected_features,
+                    "received": len(request.features)
+                }
+            )
             raise HTTPException(
-                status_code=400,
-                detail=f"Expected {expected_features} features, got {len(request.features)}"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Expected {settings.expected_features} features, got {len(request.features)}"
+            )
+        
+        # Convert features to numpy array
+        try:
+            features_array = np.array(request.features, dtype=np.float64).reshape(1, -1)
+        except (ValueError, TypeError) as e:
+            logger.warning("Invalid feature values", extra={"error": str(e)})
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid feature values: {str(e)}"
+            )
+        
+        # Validate feature values (check for NaN, Inf)
+        if not np.isfinite(features_array).all():
+            logger.warning("Non-finite feature values detected")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Feature values must be finite numbers"
             )
         
         # Make prediction
-        prediction = current_model.predict(features_array)[0]
+        prediction = model.predict(features_array)[0]
         
         # Get prediction probability
-        if hasattr(current_model, 'predict_proba'):
-            probabilities = current_model.predict_proba(features_array)[0]
+        if hasattr(model, 'predict_proba'):
+            probabilities = model.predict_proba(features_array)[0]
             probability = float(probabilities[1])  # Probability of high-risk class
         else:
             # Fallback if model doesn't support predict_proba
             probability = float(prediction)
         
-        # Determine risk level
-        risk_level = "high" if prediction == 1 else "low"
+        # Determine risk level based on thresholds
+        if probability < settings.risk_threshold_low:
+            risk_level = "low"
+        elif probability > settings.risk_threshold_high:
+            risk_level = "high"
+        else:
+            risk_level = "medium"
+        
+        # Calculate latency
+        latency = time.time() - start_time
+        metrics["prediction_latency_seconds"].append(latency)
+        metrics["predictions_success"] += 1
+        
+        # Keep only last 1000 latency measurements
+        if len(metrics["prediction_latency_seconds"]) > 1000:
+            metrics["prediction_latency_seconds"] = metrics["prediction_latency_seconds"][-1000:]
+        
+        logger.info(
+            "Prediction completed",
+            extra={
+                "prediction": int(prediction),
+                "probability": probability,
+                "risk_level": risk_level,
+                "latency_seconds": latency
+            }
+        )
         
         return PredictionResponse(
             prediction=int(prediction),
@@ -204,21 +372,30 @@ async def predict(request: PredictionRequest):
             risk_level=risk_level
         )
         
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid input data: {str(e)}"
-        )
+    except HTTPException:
+        metrics["predictions_errors"] += 1
+        raise
     except Exception as e:
-        logger.error(f"Prediction error: {e}")
+        metrics["predictions_errors"] += 1
+        logger.error(
+            "Prediction error",
+            extra={"error": str(e)},
+            exc_info=True
+        )
         raise HTTPException(
-            status_code=500,
-            detail=f"Prediction failed: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Prediction failed. Please try again later."
         )
 
 
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        app,
+        host=settings.api_host,
+        port=settings.api_port,
+        workers=settings.api_workers if not settings.api_reload else 1,
+        reload=settings.api_reload,
+        log_config=None  # Use our custom logging
+    )

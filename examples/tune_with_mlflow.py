@@ -15,10 +15,10 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.mlflow_tracking import MLflowTracker
-from src.hyperparameter_tuning import HyperparameterTuner
-from src.data_splitting import load_splits
-from src.model_training import ModelTrainer
+from src.models.tracking import MLflowTracker
+from src.models.tuning import HyperparameterTuner
+from src.features.splitting import load_splits
+from src.models.training import ModelTrainer
 
 
 def main():

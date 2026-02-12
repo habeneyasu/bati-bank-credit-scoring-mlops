@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.rfm_calculator import RFMCalculator, calculate_rfm_metrics
+from src.features.rfm import RFMCalculator, calculate_rfm_metrics
 
 
 class TestRFMCalculator:

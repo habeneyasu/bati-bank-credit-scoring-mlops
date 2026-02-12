@@ -15,7 +15,7 @@ import shutil
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data_splitting import (
+from src.features.splitting import (
     split_data,
     split_data_from_file,
     load_splits,

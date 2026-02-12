@@ -15,7 +15,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.high_risk_labeling import HighRiskLabeler, create_high_risk_target
+from src.features.labeling import HighRiskLabeler, create_high_risk_target
 
 
 def main():

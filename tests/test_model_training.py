@@ -14,7 +14,7 @@ import tempfile
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.model_training import ModelTrainer, train_models
+from src.models.training import ModelTrainer, train_models
 
 
 class TestModelTrainer:

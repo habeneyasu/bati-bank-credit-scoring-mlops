@@ -14,7 +14,7 @@ import tempfile
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.hyperparameter_tuning import HyperparameterTuner, tune_hyperparameters
+from src.models.tuning import HyperparameterTuner, tune_hyperparameters
 
 
 class TestHyperparameterTuner:

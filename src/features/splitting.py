@@ -373,7 +373,7 @@ if __name__ == "__main__":
         print()
         print("Example usage:")
         print("""
-        from src.data_splitting import split_data_from_file
+        from src.features.splitting import split_data_from_file
         
         # Split data
         X_train, X_test, y_train, y_test = split_data_from_file(

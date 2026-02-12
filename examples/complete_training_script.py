@@ -20,10 +20,10 @@ import numpy as np
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.data_splitting import DataSplitter
-from src.model_training import ModelTrainer
-from src.hyperparameter_tuning import HyperparameterTuner
-from src.mlflow_tracking import MLflowTracker
+from src.features.splitting import DataSplitter
+from src.models.training import ModelTrainer
+from src.models.tuning import HyperparameterTuner
+from src.models.tracking import MLflowTracker
 from sklearn.metrics import (
     accuracy_score,
     precision_score,

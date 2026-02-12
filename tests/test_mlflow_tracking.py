@@ -17,7 +17,7 @@ import shutil
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.mlflow_tracking import MLflowTracker, track_experiment
+from src.models.tracking import MLflowTracker, track_experiment
 
 
 @pytest.fixture

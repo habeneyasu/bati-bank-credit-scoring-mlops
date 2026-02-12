@@ -13,7 +13,7 @@ import sys
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.high_risk_labeling import HighRiskLabeler, create_high_risk_target
+from src.features.labeling import HighRiskLabeler, create_high_risk_target
 
 
 class TestHighRiskLabeler:

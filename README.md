@@ -146,22 +146,35 @@ pip install -r requirements.txt
 
 ```bash
 # 1. Calculate RFM and create target variable
-python examples/step1_calculate_rfm.py
-python examples/step2_cluster_customers.py
-python examples/step3_create_high_risk_target.py
-python examples/integrate_target_to_processed_data.py
+python3 examples/step1_calculate_rfm.py
+python3 examples/step2_cluster_customers.py
+python3 examples/step3_create_high_risk_target.py
+python3 examples/integrate_target_to_processed_data.py
 
 # 2. Prepare data splits
-python examples/prepare_data_splits.py
+python3 examples/prepare_data_splits.py
 
 # 3. Train models with MLflow tracking
-python examples/complete_training_script.py
+python3 examples/complete_training_script.py
 
 # 4. Start API server
-./start_api.sh
+docker-compose up -d
+# Or directly: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 
 # 5. Test API (in another terminal)
-python examples/test_api.py
+python3 examples/test_api.py
+```
+
+**Note**: The project uses a clean modular structure. Import examples:
+```python
+# Feature engineering
+from src.features import RFMCalculator, DataProcessor, split_data
+
+# Model training
+from src.models import ModelTrainer, MLflowTracker
+
+# Utilities
+from src.utils import settings, get_logger
 ```
 
 ### Test the API
@@ -246,6 +259,9 @@ All models exceed the 0.70 ROC-AUC target. Random Forest is the best performer.
 
 ## API Endpoints
 
+### `GET /`
+API information and available endpoints.
+
 ### `GET /health`
 Health check and model status.
 
@@ -258,6 +274,16 @@ Health check and model status.
   "model_version": "Production"
 }
 ```
+
+### `GET /metrics`
+Prometheus-style metrics endpoint (if enabled).
+
+Returns metrics in Prometheus format:
+- `predictions_total`: Total number of predictions
+- `predictions_success`: Successful predictions
+- `predictions_errors`: Failed predictions
+- `prediction_latency_seconds`: Average prediction latency
+- `model_load_errors`: Model loading errors
 
 ### `POST /predict`
 Predict credit risk for customer data.
@@ -280,53 +306,86 @@ Predict credit risk for customer data.
 
 **Features Required**: Exactly 26 features in order (see `docs/api_input_features.md` for details)
 
+**Risk Levels**:
+- `low`: probability < 0.30 (auto-approve)
+- `medium`: 0.30 ≤ probability ≤ 0.60 (manual review)
+- `high`: probability > 0.60 (auto-reject)
+
 ---
 
 ## Project Structure
 
 ```
 bati-bank-credit-scoring-mlops/
-├── src/                    # Source code modules
-│   ├── api/               # FastAPI REST API
-│   ├── data_processing.py # Feature engineering pipeline
-│   ├── rfm_calculator.py  # RFM metrics calculation
-│   ├── customer_clustering.py  # K-Means clustering
-│   ├── high_risk_labeling.py   # Target variable creation
-│   ├── model_training.py       # Model training
-│   ├── hyperparameter_tuning.py # Hyperparameter optimization
-│   └── mlflow_tracking.py      # MLflow integration
-├── examples/              # Example scripts and workflows
-├── tests/                 # Unit tests
-├── notebooks/             # EDA and analysis
-├── data/                  # Data files (raw and processed) - NOT in repository
-│   ├── raw/              # Place downloaded dataset here (gitignored)
-│   └── processed/        # Generated processed files (gitignored)
-├── mlruns/               # MLflow experiment tracking
-├── docs/                 # Documentation
-├── Dockerfile            # Docker configuration
-├── docker-compose.yml    # Docker Compose setup
-├── start_api.sh         # API startup script
-└── requirements.txt     # Python dependencies
+├── src/                          # Source code (modular structure)
+│   ├── features/                 # Feature engineering modules
+│   │   ├── rfm.py               # RFM metrics calculation
+│   │   ├── clustering.py        # Customer clustering
+│   │   ├── labeling.py          # High-risk labeling
+│   │   ├── processing.py        # Data processing pipeline
+│   │   ├── woe.py               # Weight of Evidence
+│   │   └── splitting.py         # Data splitting
+│   ├── models/                   # Model training and tracking
+│   │   ├── training.py          # Model training
+│   │   ├── tuning.py            # Hyperparameter tuning
+│   │   └── tracking.py         # MLflow integration
+│   ├── api/                      # API layer
+│   │   ├── main.py              # FastAPI application
+│   │   ├── middleware.py        # Custom middleware
+│   │   └── pydantic_models.py   # Request/response models
+│   └── utils/                    # Utility modules
+│       ├── config.py            # Configuration management
+│       ├── logging.py           # Structured logging
+│       └── retry.py             # Retry utilities
+├── examples/                      # Example scripts and workflows
+├── tests/                         # Unit tests
+├── notebooks/                     # Jupyter notebooks
+│   ├── 01_eda.ipynb             # Production-grade EDA
+│   └── eda.ipynb                # Legacy EDA
+├── data/                          # Data files (raw and processed) - NOT in repository
+│   ├── raw/                      # Place downloaded dataset here (gitignored)
+│   └── processed/                # Generated processed files (gitignored)
+├── mlruns/                        # MLflow experiment tracking
+├── docs/                          # Documentation
+├── Dockerfile                     # Docker configuration
+├── docker-compose.yml             # Docker Compose setup
+└── requirements.txt               # Python dependencies
 ```
+
+**Key Improvements:**
+- ✅ **Modular Structure**: Clean separation of features, models, API, and utils
+- ✅ **Industry Best Practices**: Follows standard Python project structure
+- ✅ **Easy Navigation**: Related functionality grouped together
+- ✅ **Scalable**: Easy to extend with new features
 
 ---
 
 ## Key Features
 
+### ML/AI Features
 - ✅ **Proxy Target Engineering**: RFM-based customer segmentation
 - ✅ **Automated Feature Pipeline**: 26 engineered features
 - ✅ **Multiple ML Models**: Logistic Regression, Random Forest, XGBoost
 - ✅ **Hyperparameter Tuning**: Grid Search and Random Search
 - ✅ **MLflow Integration**: Experiment tracking and model registry
-- ✅ **Production API**: FastAPI with Docker containerization
-- ✅ **CI/CD Pipeline**: Automated testing and code quality checks
+
+### Production Features
+- ✅ **Production API**: FastAPI with async support
+- ✅ **Configuration Management**: Type-safe settings with pydantic-settings
+- ✅ **Structured Logging**: JSON logs for production, text for development
+- ✅ **Monitoring**: Prometheus-style metrics endpoint
+- ✅ **Security**: CORS, rate limiting, input validation
+- ✅ **Error Handling**: Retry logic with exponential backoff
+- ✅ **Docker**: Multi-stage builds, non-root user, security best practices
+- ✅ **CI/CD Pipeline**: Automated testing, linting, and quality checks
+- ✅ **Code Quality**: Pre-commit hooks, type checking, code formatting
 - ✅ **Regulatory Compliance**: Basel II Accord requirements
 
 ---
 
 ## 🔧 Environment Variables
 
-Create a `.env` file in the project root (optional):
+Create a `.env` file in the project root (see `.env.example` for all options):
 
 ```env
 # MLflow Configuration
@@ -337,10 +396,22 @@ MODEL_STAGE=Production
 # API Configuration
 API_HOST=0.0.0.0
 API_PORT=8000
+API_WORKERS=1
 
 # Risk Thresholds
 RISK_THRESHOLD_LOW=0.30
 RISK_THRESHOLD_HIGH=0.60
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+
+# Security
+ENABLE_RATE_LIMITING=false
+RATE_LIMIT_PER_MINUTE=60
+
+# Monitoring
+ENABLE_METRICS=true
 ```
 
 Or set them directly:
@@ -350,6 +421,8 @@ export MLFLOW_TRACKING_URI="file:./mlruns"
 export MODEL_NAME="credit_scoring_model"
 export MODEL_STAGE="Production"
 ```
+
+**Note**: For production, copy `.env.example` to `.env` and configure appropriately.
 
 ---
 
