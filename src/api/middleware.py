@@ -7,7 +7,7 @@ Includes rate limiting, request logging, and error handling.
 import time
 from typing import Callable
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
@@ -34,7 +34,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         
         client_ip = request.client.host if request.client else "unknown"
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Clean old entries (older than 1 minute)
         self.rate_limit_store[client_ip] = [

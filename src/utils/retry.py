@@ -81,7 +81,7 @@ def retry(
     return decorator
 
 
-async def async_retry(
+def async_retry(
     max_attempts: int = 3,
     delay: float = 1.0,
     backoff: float = 2.0,

@@ -239,6 +239,34 @@ class TestTrainModelsFunction:
         assert 'decision_tree' in trainer.models_
 
 
+class TestModelEvaluation:
+    """Tests for model evaluation methods."""
+    
+    @pytest.fixture
+    def sample_data(self):
+        """Create sample training data."""
+        np.random.seed(42)
+        n_samples = 200
+        
+        X = pd.DataFrame({
+            'feature1': np.random.randn(n_samples),
+            'feature2': np.random.randn(n_samples),
+            'feature3': np.random.randn(n_samples)
+        })
+        
+        # Create target with some relationship to features
+        y = pd.Series(
+            ((X['feature1'] + X['feature2']) > 0).astype(int)
+        )
+        
+        # Split into train/test
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+        
+        return X_train, X_test, y_train, y_test
+    
     def test_evaluate_model_computes_all_metrics(self, sample_data):
         """Test that evaluation computes all required metrics: Accuracy, Precision, Recall, F1, ROC-AUC."""
         X_train, X_test, y_train, y_test = sample_data

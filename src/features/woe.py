@@ -45,7 +45,7 @@ def calculate_woe_iv(
         group_col = 'feature'
     
     # Calculate counts
-    grouped = df.groupby(group_col).agg({
+    grouped = df.groupby(group_col, observed=True).agg({
         'target': ['count', 'sum']
     })
     grouped.columns = ['total', 'good']
