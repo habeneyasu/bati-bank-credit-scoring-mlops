@@ -119,7 +119,7 @@ This project uses transaction data with the following characteristics:
 **Data Requirements**:
 - CSV format
 - Required columns: `CustomerId`, `TransactionStartTime`, `Amount`, `ProductCategory`, `ChannelId`, `ProviderId`, etc.
-- See `notebooks/eda.ipynb` for expected data structure
+- See `notebooks/01_eda.ipynb` for expected data structure
 
 ---
 
@@ -340,8 +340,7 @@ bati-bank-credit-scoring-mlops/
 ├── examples/                      # Example scripts and workflows
 ├── tests/                         # Unit tests
 ├── notebooks/                     # Jupyter notebooks
-│   ├── 01_eda.ipynb             # Production-grade EDA
-│   └── eda.ipynb                # Legacy EDA
+│   └── 01_eda.ipynb             # Production-grade EDA
 ├── data/                          # Data files (raw and processed) - NOT in repository
 │   ├── raw/                      # Place downloaded dataset here (gitignored)
 │   └── processed/                # Generated processed files (gitignored)
@@ -388,6 +387,13 @@ bati-bank-credit-scoring-mlops/
 Create a `.env` file in the project root (see `.env.example` for all options):
 
 ```env
+# Database Configuration (REQUIRED)
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=mlops_db
+DATABASE_USER=postgres
+DATABASE_PASSWORD=your_password_here
+
 # MLflow Configuration
 MLFLOW_TRACKING_URI=file:./mlruns
 MODEL_NAME=credit_scoring_model
@@ -414,15 +420,19 @@ RATE_LIMIT_PER_MINUTE=60
 ENABLE_METRICS=true
 ```
 
-Or set them directly:
-
+**Quick Setup:**
 ```bash
-export MLFLOW_TRACKING_URI="file:./mlruns"
-export MODEL_NAME="credit_scoring_model"
-export MODEL_STAGE="Production"
+# Copy example file
+cp .env.example .env
+
+# Edit with your credentials
+nano .env  # or use your preferred editor
 ```
 
-**Note**: For production, copy `.env.example` to `.env` and configure appropriately.
+**Note**: 
+- The `.env` file contains sensitive credentials and is **NOT committed to git**
+- For production, use environment variables from your deployment platform
+- See `docs/ENVIRONMENT_SETUP.md` for detailed configuration guide
 
 ---
 

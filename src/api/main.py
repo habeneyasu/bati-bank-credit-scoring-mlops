@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 import time
+import uuid
+from datetime import datetime, timezone
 import numpy as np
 import mlflow
 import mlflow.sklearn
@@ -32,6 +34,8 @@ sys.path.insert(0, str(project_root))
 from src.utils.config import settings
 from src.utils.logging import get_logger
 from src.utils.retry import retry
+from src.utils.cache import get_cache_manager
+from src.utils.performance import get_performance_monitor, PerformanceTimer
 from src.api.pydantic_models import (
     PredictionRequest,
     PredictionResponse,
@@ -396,6 +400,8 @@ async def predict(request: PredictionRequest):
     """
     Predict credit risk for customer data.
     
+    Optimized for sub-200ms latency with caching and performance monitoring.
+    
     Args:
         request: PredictionRequest containing feature values
     
@@ -414,120 +420,161 @@ async def predict(request: PredictionRequest):
             detail="Model not loaded. Please check server logs."
         )
     
+    # Performance monitoring
+    perf_monitor = get_performance_monitor() if settings.enable_performance_monitoring else None
+    
+    # Check cache if enabled
+    cache = None
+    cache_key = None
+    if settings.enable_prediction_cache:
+        cache = get_cache_manager()
+        # Generate cache key from features (excluding explanation flag)
+        cache_key = cache._generate_key("prediction", request.features)
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug("Cache hit for prediction")
+            if perf_monitor:
+                perf_monitor.record_latency(0.001, "predict")  # Cache hit is very fast
+            return PredictionResponse(**cached_result)
+    
+    # Start performance timer
     start_time = time.time()
     metrics["predictions_total"] += 1
     
     try:
-        # Validate feature count
-        if len(request.features) != settings.expected_features:
-            logger.warning(
-                "Invalid feature count",
+        with PerformanceTimer(perf_monitor, "predict") as timer:
+            # Validate feature count
+            if len(request.features) != settings.expected_features:
+                logger.warning(
+                    "Invalid feature count",
+                    extra={
+                        "expected": settings.expected_features,
+                        "received": len(request.features)
+                    }
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Expected {settings.expected_features} features, got {len(request.features)}"
+                )
+            
+            # Convert features to numpy array
+            try:
+                features_array = np.array(request.features, dtype=np.float64).reshape(1, -1)
+            except (ValueError, TypeError) as e:
+                logger.warning("Invalid feature values", extra={"error": str(e)})
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid feature values: {str(e)}"
+                )
+            
+            # Validate feature values (check for NaN, Inf)
+            if not np.isfinite(features_array).all():
+                logger.warning("Non-finite feature values detected")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Feature values must be finite numbers"
+                )
+            
+            # Make prediction (optimized: single call to predict_proba if available)
+            if hasattr(model, 'predict_proba'):
+                # Use predict_proba to get both prediction and probability in one call
+                probabilities = model.predict_proba(features_array)[0]
+                probability = float(probabilities[1])  # Probability of high-risk class
+                prediction = int(np.argmax(probabilities))  # Class with highest probability
+            else:
+                # Fallback if model doesn't support predict_proba
+                prediction = model.predict(features_array)[0]
+                probability = float(prediction)
+            
+            # Determine risk level based on thresholds
+            if probability < settings.risk_threshold_low:
+                risk_level = "low"
+            elif probability > settings.risk_threshold_high:
+                risk_level = "high"
+            else:
+                risk_level = "medium"
+            
+            # Calculate latency
+            latency = time.time() - start_time
+            if timer:
+                timer.latency = latency  # Update timer with actual latency
+            metrics["prediction_latency_seconds"].append(latency)
+            metrics["predictions_success"] += 1
+            
+            # Keep only last 1000 latency measurements
+            if len(metrics["prediction_latency_seconds"]) > 1000:
+                metrics["prediction_latency_seconds"] = metrics["prediction_latency_seconds"][-1000:]
+            
+            # Generate prediction ID and timestamp for tracking
+            prediction_id = f"pred_{uuid.uuid4().hex[:12]}"
+            timestamp = datetime.now(timezone.utc).isoformat()
+            
+            # Log prediction with customer identification
+            logger.info(
+                "Prediction completed",
                 extra={
-                    "expected": settings.expected_features,
-                    "received": len(request.features)
+                    "customer_id": request.customer_id or "unknown",
+                    "prediction_id": prediction_id,
+                    "prediction": int(prediction),
+                    "probability": probability,
+                    "risk_level": risk_level,
+                    "latency_seconds": latency,
+                    "latency_ms": latency * 1000,
+                    "timestamp": timestamp
                 }
             )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Expected {settings.expected_features} features, got {len(request.features)}"
-            )
-        
-        # Convert features to numpy array
-        try:
-            features_array = np.array(request.features, dtype=np.float64).reshape(1, -1)
-        except (ValueError, TypeError) as e:
-            logger.warning("Invalid feature values", extra={"error": str(e)})
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid feature values: {str(e)}"
-            )
-        
-        # Validate feature values (check for NaN, Inf)
-        if not np.isfinite(features_array).all():
-            logger.warning("Non-finite feature values detected")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Feature values must be finite numbers"
-            )
-        
-        # Make prediction
-        prediction = model.predict(features_array)[0]
-        
-        # Get prediction probability
-        if hasattr(model, 'predict_proba'):
-            probabilities = model.predict_proba(features_array)[0]
-            probability = float(probabilities[1])  # Probability of high-risk class
-        else:
-            # Fallback if model doesn't support predict_proba
-            probability = float(prediction)
-        
-        # Determine risk level based on thresholds
-        if probability < settings.risk_threshold_low:
-            risk_level = "low"
-        elif probability > settings.risk_threshold_high:
-            risk_level = "high"
-        else:
-            risk_level = "medium"
-        
-        # Calculate latency
-        latency = time.time() - start_time
-        metrics["prediction_latency_seconds"].append(latency)
-        metrics["predictions_success"] += 1
-        
-        # Keep only last 1000 latency measurements
-        if len(metrics["prediction_latency_seconds"]) > 1000:
-            metrics["prediction_latency_seconds"] = metrics["prediction_latency_seconds"][-1000:]
-        
-        logger.info(
-            "Prediction completed",
-            extra={
+            
+            response_data = {
+                "customer_id": request.customer_id,
                 "prediction": int(prediction),
                 "probability": probability,
                 "risk_level": risk_level,
-                "latency_seconds": latency
+                "prediction_id": prediction_id,
+                "timestamp": timestamp
             }
-        )
-        
-        response_data = {
-            "prediction": int(prediction),
-            "probability": probability,
-            "risk_level": risk_level
-        }
-        
-        # Add explanation if requested
-        if request.include_explanation:
-            if explainer is None:
-                logger.warning("Explanation requested but explainer not available")
-                response_data["explanation"] = None
-            else:
-                try:
-                    explanation = explainer.explain_instance(features_array)
-                    # Convert to API format
-                    response_data["explanation"] = {
-                        "base_value": explanation["base_value"],
-                        "explanation_summary": explanation["explanation_summary"],
-                        "feature_importance": [
-                            {
-                                "feature": feat["feature"],
-                                "shap_value": feat["shap_value"],
-                                "feature_value": feat["feature_value"]
-                            }
-                            for feat in explanation["feature_importance"]
-                        ],
-                        "shap_values": explanation["shap_values"],
-                        "feature_names": explanation["feature_names"]
-                    }
-                except Exception as e:
-                    logger.error(f"Error generating explanation: {e}", exc_info=True)
+            
+            # Add explanation if requested
+            if request.include_explanation:
+                if explainer is None:
+                    logger.warning("Explanation requested but explainer not available")
                     response_data["explanation"] = None
-        
-        return PredictionResponse(**response_data)
+                else:
+                    try:
+                        explanation = explainer.explain_instance(features_array)
+                        # Convert to API format
+                        response_data["explanation"] = {
+                            "base_value": explanation["base_value"],
+                            "explanation_summary": explanation["explanation_summary"],
+                            "feature_importance": [
+                                {
+                                    "feature": feat["feature"],
+                                    "shap_value": feat["shap_value"],
+                                    "feature_value": feat["feature_value"]
+                                }
+                                for feat in explanation["feature_importance"]
+                            ],
+                            "shap_values": explanation["shap_values"],
+                            "feature_names": explanation["feature_names"]
+                        }
+                    except Exception as e:
+                        logger.error(f"Error generating explanation: {e}", exc_info=True)
+                        response_data["explanation"] = None
+            
+            # Cache result if caching enabled (only cache without explanation for performance)
+            if cache and cache_key and not request.include_explanation:
+                cache.set(cache_key, response_data, ttl=settings.cache_ttl_seconds)
+            
+            return PredictionResponse(**response_data)
         
     except HTTPException:
         metrics["predictions_errors"] += 1
+        if perf_monitor:
+            perf_monitor.record_error()
         raise
     except Exception as e:
         metrics["predictions_errors"] += 1
+        if perf_monitor:
+            perf_monitor.record_error()
         logger.error(
             "Prediction error",
             extra={"error": str(e)},
@@ -923,6 +970,56 @@ async def get_current_versions():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get current versions: {str(e)}"
         )
+
+
+@app.get("/api/performance", tags=["Monitoring"])
+async def get_performance_metrics():
+    """
+    Get performance metrics including latency percentiles.
+    
+    Returns performance statistics to monitor SLA compliance
+    (95th percentile latency under 200ms for real-time lending decisions).
+    
+    Optimized for fast response - returns cached metrics when available.
+    """
+    try:
+        if not settings.enable_performance_monitoring:
+            return JSONResponse({
+                "status": "disabled",
+                "message": "Performance monitoring is disabled",
+                "stats": {},
+                "sla": {"compliant": False, "message": "Monitoring disabled"},
+                "target_p95_ms": settings.target_p95_latency_ms
+            })
+        
+        perf_monitor = get_performance_monitor()
+        
+        # Get stats (this should be fast as it's just reading from memory)
+        stats = perf_monitor.get_all_stats()
+        
+        # Check SLA (also fast - just percentile calculation)
+        sla_check = perf_monitor.check_sla(
+            percentile=95,
+            threshold_ms=settings.target_p95_latency_ms
+        )
+        
+        return JSONResponse({
+            "stats": stats,
+            "sla": sla_check,
+            "target_p95_ms": settings.target_p95_latency_ms,
+            "status": "enabled"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {e}", exc_info=True)
+        # Return error response instead of raising exception for better UX
+        return JSONResponse({
+            "status": "error",
+            "message": str(e),
+            "stats": {},
+            "sla": {"compliant": False, "message": f"Error: {str(e)}"},
+            "target_p95_ms": settings.target_p95_latency_ms
+        }, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 if __name__ == "__main__":

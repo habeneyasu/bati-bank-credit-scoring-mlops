@@ -70,6 +70,14 @@ export const creditScoringAPI = {
     const response = await api.get('/api/versions/current');
     return response.data;
   },
+
+  // Get performance metrics
+  async getPerformanceMetrics() {
+    const response = await api.get('/api/performance', {
+      timeout: 5000 // 5 second timeout
+    });
+    return response.data;
+  },
 };
 
 export default creditScoringAPI;

@@ -19,12 +19,23 @@ class PredictionRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "customer_id": "CUST-12345",
                 "features": [0.0, -0.046, -0.072, -0.349, -0.045, -2.156, -0.101, 
                             0.849, -0.994, -0.006, 0.853, 0.170, -0.068, -0.312, 
                             -0.167, 0.164, -0.193, -0.025, 0.0, 0.0, 0.0, 0.0, 
-                            0.0, 0.0, 0.0, 0.0]
+                            0.0, 0.0, 0.0, 0.0],
+                "include_explanation": False
             }
         }
+    )
+    
+    # Customer identification (required for audit trail and compliance)
+    customer_id: Optional[str] = Field(
+        default=None,
+        description="Unique customer identifier for tracking and audit purposes. "
+                    "Recommended for production use to enable prediction tracking, "
+                    "customer-level analytics, and regulatory compliance.",
+        examples=["CUST-12345", "customer_abc123", "user_789"]
     )
     
     # Feature values as a list (for flexibility)
@@ -54,11 +65,20 @@ class PredictionResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "customer_id": "CUST-12345",
                 "prediction": 0,
                 "probability": 0.15,
-                "risk_level": "low"
+                "risk_level": "low",
+                "prediction_id": "pred_abc123xyz",
+                "timestamp": "2026-02-12T18:30:00Z"
             }
         }
+    )
+    
+    # Echo back customer_id for confirmation
+    customer_id: Optional[str] = Field(
+        default=None,
+        description="Customer identifier (echoed from request for confirmation)"
     )
     
     prediction: int = Field(
@@ -78,6 +98,16 @@ class PredictionResponse(BaseModel):
     risk_level: str = Field(
         ...,
         description="Human-readable risk level: 'low', 'medium', or 'high'"
+    )
+    
+    prediction_id: Optional[str] = Field(
+        default=None,
+        description="Unique prediction identifier for tracking and audit purposes"
+    )
+    
+    timestamp: Optional[str] = Field(
+        default=None,
+        description="ISO 8601 timestamp of when the prediction was made"
     )
     
     explanation: Optional[Dict[str, Any]] = Field(

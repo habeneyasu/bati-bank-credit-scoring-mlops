@@ -128,6 +128,36 @@ class Settings(BaseSettings):
         description="Metrics endpoint path"
     )
     
+    # Caching Configuration
+    use_redis_cache: bool = Field(
+        default=False,
+        description="Use Redis for caching (requires redis package)"
+    )
+    redis_url: Optional[str] = Field(
+        default=None,
+        description="Redis connection URL (default: redis://localhost:6379/0)"
+    )
+    cache_ttl_seconds: int = Field(
+        default=300,
+        description="Cache time-to-live in seconds",
+        ge=1
+    )
+    enable_prediction_cache: bool = Field(
+        default=True,
+        description="Enable caching for predictions"
+    )
+    
+    # Performance Configuration
+    target_p95_latency_ms: float = Field(
+        default=200.0,
+        description="Target 95th percentile latency in milliseconds",
+        ge=1.0
+    )
+    enable_performance_monitoring: bool = Field(
+        default=True,
+        description="Enable performance monitoring"
+    )
+    
     # Environment
     environment: str = Field(
         default="development",
@@ -136,6 +166,48 @@ class Settings(BaseSettings):
     debug: bool = Field(
         default=False,
         description="Enable debug mode"
+    )
+    
+    # Database Configuration
+    database_url: Optional[str] = Field(
+        default=None,
+        description="Database connection URL (postgresql://user:pass@host:port/dbname)"
+    )
+    database_host: str = Field(
+        default="localhost",
+        description="Database host"
+    )
+    database_port: int = Field(
+        default=5432,
+        description="Database port",
+        ge=1,
+        le=65535
+    )
+    database_name: str = Field(
+        default="mlops_db",
+        description="Database name"
+    )
+    database_user: str = Field(
+        default="postgres",
+        description="Database user"
+    )
+    database_password: Optional[str] = Field(
+        default=None,
+        description="Database password"
+    )
+    database_pool_size: int = Field(
+        default=5,
+        description="Database connection pool size",
+        ge=1
+    )
+    database_max_overflow: int = Field(
+        default=10,
+        description="Database connection pool max overflow",
+        ge=0
+    )
+    database_echo: bool = Field(
+        default=False,
+        description="Echo SQL queries (for debugging)"
     )
     
     @validator("cors_origins", pre=True)

@@ -20,8 +20,13 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Production stage
 FROM python:3.12-slim
 
-# Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Install runtime system dependencies needed by LightGBM and other libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security with home directory
+RUN groupadd -r appuser && useradd -r -g appuser -m -d /home/appuser appuser
 
 # Set working directory
 WORKDIR /app
@@ -34,8 +39,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY src/ ./src/
 
 # Create necessary directories with proper permissions
-RUN mkdir -p ./mlruns ./logs && \
-    chown -R appuser:appuser /app
+RUN mkdir -p ./mlruns ./logs /home/appuser/.config && \
+    chown -R appuser:appuser /app /home/appuser
 
 # Switch to non-root user
 USER appuser
@@ -49,6 +54,7 @@ ENV MODEL_NAME=credit_scoring_model
 ENV MODEL_STAGE=Production
 ENV API_PORT=8000
 ENV ENVIRONMENT=production
+ENV MPLCONFIGDIR=/home/appuser/.config/matplotlib
 
 # Expose port
 EXPOSE 8000
