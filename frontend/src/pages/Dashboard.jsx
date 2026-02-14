@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, Brain, BarChart3, Zap, AlertCircle, CheckCircle, XCircle, 
   FileText, Shield, X, GitBranch, Activity, Home, Settings, 
-  Users, Target, Clock, Award, ArrowRight, Menu, X as XIcon
+  Users, Target, Clock, Award, ArrowRight, Menu, X as XIcon, KeyRound, LogOut, User as UserIcon, Database, List, FileCheck, FlaskConical, RefreshCw
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import FeatureInputForm from '../components/FeatureInputForm';
 import PredictionResult from '../components/PredictionResult';
 import ExplanationPanel from '../components/ExplanationPanel';
@@ -12,6 +14,23 @@ import ModelCard from '../components/ModelCard';
 import FairnessAnalysis from '../components/FairnessAnalysis';
 import VersionInfo from '../components/VersionInfo';
 import PerformanceMonitor from '../components/PerformanceMonitor';
+import PredictionsTable from '../components/PredictionsTable';
+import BusinessKPIs from '../components/BusinessKPIs';
+import UsersTable from '../components/UsersTable';
+import RolesTable from '../components/RolesTable';
+import DataUpload from '../components/DataUpload';
+import TransactionsTable from '../components/TransactionsTable';
+import DriftDetection from '../components/DriftDetection';
+import AlertsPanel from '../components/AlertsPanel';
+import DataQualityMonitor from '../components/DataQualityMonitor';
+import CustomerScoresTable from '../components/CustomerScoresTable';
+import CustomerScorer from '../components/CustomerScorer';
+import DataLineage from '../components/DataLineage';
+import FeatureStore from '../components/FeatureStore';
+import ABTesting from '../components/ABTesting';
+import ModelRetraining from '../components/ModelRetraining';
+import BatchPredictions from '../components/BatchPredictions';
+import LoadTesting from '../components/LoadTesting';
 import { creditScoringAPI } from '../utils/api';
 
 const Dashboard = () => {
@@ -25,11 +44,13 @@ const Dashboard = () => {
   const [apiStatus, setApiStatus] = useState('checking');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [performanceData, setPerformanceData] = useState(null);
+  const [featureStoreStats, setFeatureStoreStats] = useState(null);
 
   useEffect(() => {
     loadFeatureNames();
     checkApiHealth();
     loadPerformanceData();
+    loadFeatureStoreStats();
   }, []);
 
   const loadFeatureNames = async () => {
@@ -69,6 +90,15 @@ const Dashboard = () => {
       setPerformanceData(data);
     } catch (error) {
       console.error('Failed to load performance data:', error);
+    }
+  };
+
+  const loadFeatureStoreStats = async () => {
+    try {
+      const data = await creditScoringAPI.getFeatureStoreStats();
+      setFeatureStoreStats(data);
+    } catch (error) {
+      console.error('Failed to load feature store stats:', error);
     }
   };
 
@@ -133,16 +163,41 @@ const Dashboard = () => {
 
   const menuItems = [
     { id: 'overview', label: 'Overview', icon: Home },
+    { id: 'data', label: 'Data Upload', icon: Database },
+    { id: 'transactions', label: 'Transactions', icon: List },
     { id: 'predict', label: 'Risk Assessment', icon: Brain },
+    { id: 'predictions', label: 'Predictions', icon: FileText },
+    { id: 'scores', label: 'Customer Scores', icon: Award },
+    { id: 'score-customer', label: 'Score Customer', icon: Award },
+    { id: 'feature-store', label: 'Feature Store', icon: Database },
+    { id: 'ab-testing', label: 'A/B Testing', icon: FlaskConical },
+    { id: 'retraining', label: 'Model Retraining', icon: RefreshCw },
+    { id: 'batch-predictions', label: 'Batch Predictions', icon: FileText },
+    { id: 'load-testing', label: 'Load Testing', icon: Zap },
+    { id: 'kpis', label: 'Business KPIs', icon: BarChart3 },
+    { id: 'drift', label: 'Drift Detection', icon: TrendingUp },
+    { id: 'alerts', label: 'Alerts', icon: AlertCircle },
+    { id: 'data-quality', label: 'Data Quality', icon: FileCheck },
+    { id: 'users', label: 'Users', icon: Users },
+    { id: 'roles', label: 'Roles & Permissions', icon: KeyRound },
     { id: 'performance', label: 'Performance', icon: Activity },
     { id: 'governance', label: 'Governance', icon: Shield },
     { id: 'versions', label: 'Versions', icon: GitBranch },
+    { id: 'lineage', label: 'Data Lineage', icon: GitBranch },
   ];
 
   const stats = performanceData?.stats?.all || {};
   const p95Latency = stats.p95 || 0;
   const totalRequests = stats.count || 0;
   const errorRate = performanceData?.stats?.error_rate?.rate || 0;
+
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -175,6 +230,25 @@ const Dashboard = () => {
                    apiStatus === 'degraded' ? 'Degraded' : 'Offline'}
                 </span>
               </div>
+              {user && (
+                <div className="flex items-center gap-3">
+                  <div className="text-right hidden sm:block">
+                    <div className="text-sm font-medium text-slate-800">{user.full_name || user.username}</div>
+                    <div className="text-xs text-slate-500">{user.department || 'User'}</div>
+                  </div>
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <UserIcon className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                    title="Logout"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span className="hidden sm:inline">Logout</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -244,7 +318,7 @@ const Dashboard = () => {
           {activeTab === 'overview' && (
             <div className="space-y-6">
               {/* Hero Section with KPIs */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                 <div className="card bg-gradient-to-br from-blue-600 to-indigo-600 text-white">
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-3 bg-white/20 rounded-lg">
@@ -295,6 +369,23 @@ const Dashboard = () => {
                     {apiStatus === 'healthy' ? 'Active' : 'Degraded'}
                   </div>
                   <div className="text-sm opacity-75">Production ready</div>
+                </div>
+
+                <div className="card bg-gradient-to-br from-cyan-500 to-teal-500 text-white">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="p-3 bg-white/20 rounded-lg">
+                      <Database className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm opacity-90">Feature Store</span>
+                  </div>
+                  <div className="text-3xl font-bold mb-1">
+                    {featureStoreStats?.total_features?.toLocaleString() || 0}
+                  </div>
+                  <div className="text-sm opacity-75">
+                    {featureStoreStats?.cache_coverage 
+                      ? `${featureStoreStats.cache_coverage.toFixed(1)}% coverage`
+                      : 'Cached features'}
+                  </div>
                 </div>
               </div>
 
@@ -376,6 +467,32 @@ const Dashboard = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Data Upload Section */}
+          {activeTab === 'data' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-800">Data Upload</h2>
+                  <p className="text-slate-600 mt-1">Upload raw transaction data to the database</p>
+                </div>
+              </div>
+              <DataUpload />
+            </div>
+          )}
+
+          {/* Transactions View Section */}
+          {activeTab === 'transactions' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-800">Transaction Data</h2>
+                  <p className="text-slate-600 mt-1">View and filter uploaded transaction data from the database</p>
+                </div>
+              </div>
+              <TransactionsTable />
             </div>
           )}
 
@@ -552,6 +669,72 @@ const Dashboard = () => {
             </div>
           )}
 
+          {/* Predictions Section */}
+          {activeTab === 'predictions' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-800">Predictions History</h2>
+                  <p className="text-slate-600 mt-1">View all predictions stored in the database</p>
+                </div>
+              </div>
+              <PredictionsTable />
+            </div>
+          )}
+
+          {/* Customer Scores Section */}
+          {activeTab === 'scores' && (
+            <div className="space-y-6">
+              <CustomerScoresTable />
+            </div>
+          )}
+
+          {/* Score Customer Section */}
+          {activeTab === 'score-customer' && (
+            <div className="space-y-6">
+              <CustomerScorer />
+            </div>
+          )}
+
+          {/* Business KPIs Section */}
+          {activeTab === 'kpis' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-800">Business KPIs</h2>
+                  <p className="text-slate-600 mt-1">Key performance indicators and analytics</p>
+                </div>
+              </div>
+              <BusinessKPIs />
+            </div>
+          )}
+
+          {/* Users Section */}
+          {activeTab === 'users' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-800">Users Management</h2>
+                  <p className="text-slate-600 mt-1">Manage system users and their access</p>
+                </div>
+              </div>
+              <UsersTable />
+            </div>
+          )}
+
+          {/* Roles Section */}
+          {activeTab === 'roles' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-800">Roles & Permissions</h2>
+                  <p className="text-slate-600 mt-1">Manage roles and their permissions</p>
+                </div>
+              </div>
+              <RolesTable />
+            </div>
+          )}
+
           {/* Versions Section */}
           {activeTab === 'versions' && (
             <div className="space-y-6">
@@ -562,6 +745,69 @@ const Dashboard = () => {
                 </div>
               </div>
               <VersionInfo />
+            </div>
+          )}
+
+          {/* Drift Detection Section */}
+          {activeTab === 'drift' && (
+            <div className="space-y-6">
+              <DriftDetection />
+            </div>
+          )}
+
+          {/* Alerts Section */}
+          {activeTab === 'alerts' && (
+            <div className="space-y-6">
+              <AlertsPanel />
+            </div>
+          )}
+
+          {/* Data Lineage Section */}
+          {activeTab === 'lineage' && (
+            <div className="space-y-6">
+              <DataLineage />
+            </div>
+          )}
+
+          {/* Data Quality Section */}
+          {activeTab === 'data-quality' && (
+            <div className="space-y-6">
+              <DataQualityMonitor />
+            </div>
+          )}
+
+          {/* Feature Store Section */}
+          {activeTab === 'feature-store' && (
+            <div className="space-y-6">
+              <FeatureStore />
+            </div>
+          )}
+
+          {/* A/B Testing Section */}
+          {activeTab === 'ab-testing' && (
+            <div className="space-y-6">
+              <ABTesting />
+            </div>
+          )}
+
+          {/* Model Retraining Section */}
+          {activeTab === 'retraining' && (
+            <div className="space-y-6">
+              <ModelRetraining />
+            </div>
+          )}
+
+          {/* Batch Predictions Section */}
+          {activeTab === 'batch-predictions' && (
+            <div className="space-y-6">
+              <BatchPredictions />
+            </div>
+          )}
+
+          {/* Load Testing Section */}
+          {activeTab === 'load-testing' && (
+            <div className="space-y-6">
+              <LoadTesting />
             </div>
           )}
         </main>

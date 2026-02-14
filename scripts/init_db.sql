@@ -31,6 +31,10 @@ SET search_path TO public, predictions, features, metadata, monitoring;
 \i scripts/schema/features.sql
 \i scripts/schema/metadata.sql
 \i scripts/schema/monitoring.sql
+\i scripts/schema/ab_testing.sql
+\i scripts/schema/retraining.sql
+\i scripts/schema/batch_prediction.sql
+\i scripts/schema/multi_model_serving.sql
 
 -- Create views and functions
 \i scripts/schema/access_control_views.sql

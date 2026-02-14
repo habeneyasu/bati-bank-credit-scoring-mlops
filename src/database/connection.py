@@ -6,7 +6,8 @@ Provides singleton pattern for database connection management.
 
 from contextlib import contextmanager
 from typing import Generator, Optional
-from sqlalchemy import create_engine, Engine
+import time
+from sqlalchemy import create_engine, Engine, text
 from sqlalchemy.orm import sessionmaker, Session, scoped_session
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
@@ -171,7 +172,7 @@ class DatabaseManager:
         """Test database connection."""
         try:
             with self._engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             logger.debug("Database connection test successful")
         except Exception as e:
             logger.error(
@@ -219,13 +220,93 @@ class DatabaseManager:
         Raises:
             DatabaseError: If session creation or commit fails
         """
+        # #region agent log
+        import json
+        from pathlib import Path
+        log_path = Path("/home/haben/Project/KAIM-Training-Portfolio/bati-bank-credit-scoring-mlops/.cursor/debug.log")
+        try:
+            with open(log_path, "a") as f:
+                import traceback
+                pool = self._engine.pool if self._engine else None
+                pool_size = pool.size() if pool else None
+                pool_checked_in = pool.checkedin() if pool else None
+                pool_checked_out = pool.checkedout() if pool else None
+                f.write(json.dumps({
+                    "id": f"log_db_session_create_{int(time.time() * 1000)}",
+                    "timestamp": int(time.time() * 1000),
+                    "location": "connection.py:222",
+                    "message": "Database session created",
+                    "data": {
+                        "pool_size": pool_size,
+                        "pool_checked_in": pool_checked_in,
+                        "pool_checked_out": pool_checked_out,
+                        "pool_overflow": pool.overflow() if pool else None
+                    },
+                    "runId": "debug_run_1",
+                    "hypothesisId": "A"
+                }) + "\n")
+        except: pass
+        # #endregion
         session = self.session_factory()
         try:
             logger.debug("Database session created")
             yield session
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({
+                        "id": f"log_db_session_commit_{int(time.time() * 1000)}",
+                        "timestamp": int(time.time() * 1000),
+                        "location": "connection.py:226",
+                        "message": "Database session commit attempt",
+                        "data": {"session_id": str(id(session))},
+                        "runId": "debug_run_1",
+                        "hypothesisId": "A"
+                    }) + "\n")
+            except: pass
+            # #endregion
             session.commit()
             logger.debug("Database session committed")
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    pool = self._engine.pool if self._engine else None
+                    f.write(json.dumps({
+                        "id": f"log_db_session_committed_{int(time.time() * 1000)}",
+                        "timestamp": int(time.time() * 1000),
+                        "location": "connection.py:227",
+                        "message": "Database session committed successfully",
+                        "data": {
+                            "pool_checked_in": pool.checkedin() if pool else None,
+                            "pool_checked_out": pool.checkedout() if pool else None
+                        },
+                        "runId": "debug_run_1",
+                        "hypothesisId": "A"
+                    }) + "\n")
+            except: pass
+            # #endregion
         except IntegrityError as e:
+            # #region agent log
+            try:
+                import json, time
+                from pathlib import Path
+                log_path = Path("/home/haben/Project/KAIM-Training-Portfolio/bati-bank-credit-scoring-mlops/.cursor/debug.log")
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({
+                        "id": f"log_db_rollback_integrity_{int(time.time() * 1000)}",
+                        "timestamp": int(time.time() * 1000),
+                        "location": "connection.py:228",
+                        "message": "Database integrity error - rollback",
+                        "data": {
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "session_id": str(id(session))
+                        },
+                        "runId": "debug_run_1",
+                        "hypothesisId": "D"
+                    }) + "\n")
+            except: pass
+            # #endregion
             session.rollback()
             logger.error(
                 "Database integrity error, transaction rolled back",
@@ -237,6 +318,27 @@ class DatabaseManager:
                 original_error=e
             )
         except SQLAlchemyError as e:
+            # #region agent log
+            try:
+                import json, time
+                from pathlib import Path
+                log_path = Path("/home/haben/Project/KAIM-Training-Portfolio/bati-bank-credit-scoring-mlops/.cursor/debug.log")
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({
+                        "id": f"log_db_rollback_sql_{int(time.time() * 1000)}",
+                        "timestamp": int(time.time() * 1000),
+                        "location": "connection.py:239",
+                        "message": "Database SQL error - rollback",
+                        "data": {
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "session_id": str(id(session))
+                        },
+                        "runId": "debug_run_1",
+                        "hypothesisId": "D"
+                    }) + "\n")
+            except: pass
+            # #endregion
             session.rollback()
             logger.error(
                 "Database error, transaction rolled back",
@@ -248,6 +350,28 @@ class DatabaseManager:
                 original_error=e
             )
         except Exception as e:
+            # #region agent log
+            try:
+                import json, time
+                from pathlib import Path
+                log_path = Path("/home/haben/Project/KAIM-Training-Portfolio/bati-bank-credit-scoring-mlops/.cursor/debug.log")
+                with open(log_path, "a") as f:
+                    import traceback
+                    f.write(json.dumps({
+                        "id": f"log_db_rollback_unexpected_{int(time.time() * 1000)}",
+                        "timestamp": int(time.time() * 1000),
+                        "location": "connection.py:351",
+                        "message": "Unexpected database error - rollback",
+                        "data": {
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "traceback": traceback.format_exc()[:500]
+                        },
+                        "runId": "debug_run_1",
+                        "hypothesisId": "D"
+                    }) + "\n")
+            except: pass
+            # #endregion
             session.rollback()
             logger.error(
                 "Unexpected error in database session",
@@ -259,6 +383,28 @@ class DatabaseManager:
                 original_error=e
             )
         finally:
+            # #region agent log
+            try:
+                import json, time
+                from pathlib import Path
+                log_path = Path("/home/haben/Project/KAIM-Training-Portfolio/bati-bank-credit-scoring-mlops/.cursor/debug.log")
+                with open(log_path, "a") as f:
+                    pool = self._engine.pool if self._engine else None
+                    f.write(json.dumps({
+                        "id": f"log_db_session_close_{int(time.time() * 1000)}",
+                        "timestamp": int(time.time() * 1000),
+                        "location": "connection.py:362",
+                        "message": "Database session closed",
+                        "data": {
+                            "session_id": str(id(session)),
+                            "pool_checked_in": pool.checkedin() if pool else None,
+                            "pool_checked_out": pool.checkedout() if pool else None
+                        },
+                        "runId": "debug_run_1",
+                        "hypothesisId": "A"
+                    }) + "\n")
+            except: pass
+            # #endregion
             session.close()
             logger.debug("Database session closed")
     

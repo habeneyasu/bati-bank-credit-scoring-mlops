@@ -6,6 +6,10 @@
 
 -- Performance Metrics Table
 CREATE TABLE IF NOT EXISTS performance_metrics (
+    -- Primary Key
+    id SERIAL PRIMARY KEY,
+    
+    -- Time
     time TIMESTAMP WITH TIME ZONE NOT NULL,
     
     -- Metrics
@@ -19,7 +23,7 @@ CREATE TABLE IF NOT EXISTS performance_metrics (
     model_version VARCHAR(50),
     
     -- Additional Metadata
-    metadata JSONB
+    performance_metadata JSONB
 );
 
 -- Convert to hypertable (TimescaleDB) - uncomment if using TimescaleDB
@@ -32,6 +36,10 @@ CREATE INDEX IF NOT EXISTS idx_performance_metrics_time ON performance_metrics(t
 
 -- Drift Detection Metrics Table
 CREATE TABLE IF NOT EXISTS drift_metrics (
+    -- Primary Key
+    id SERIAL PRIMARY KEY,
+    
+    -- Time
     time TIMESTAMP WITH TIME ZONE NOT NULL,
     
     -- Feature Information
@@ -52,7 +60,7 @@ CREATE TABLE IF NOT EXISTS drift_metrics (
     
     -- Metadata
     model_version VARCHAR(50),
-    metadata JSONB
+    drift_metadata JSONB
 );
 
 -- Convert to hypertable (TimescaleDB) - uncomment if using TimescaleDB

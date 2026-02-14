@@ -30,6 +30,7 @@ from src.features.splitting import (
     load_splits,
     get_split_summary
 )
+from src.features.store import FeatureStore, get_feature_store
 
 __all__ = [
     # RFM
@@ -55,4 +56,7 @@ __all__ = [
     "split_data_from_file",
     "load_splits",
     "get_split_summary",
+    # Feature Store
+    "FeatureStore",
+    "get_feature_store",
 ]

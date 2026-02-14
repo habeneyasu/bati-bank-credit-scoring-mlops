@@ -13,9 +13,9 @@ from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date, Numeric, Text,
-    ForeignKey, CheckConstraint, Index, JSON, ARRAY, INET
+    ForeignKey, CheckConstraint, Index, JSON, ARRAY, BigInteger
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID, INET
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 
@@ -221,7 +221,7 @@ class AuditLog(Base):
     error_message = Column(Text)
     
     # Metadata
-    metadata = Column(JSONB)
+    log_metadata = Column(JSONB)
     
     # Timestamp
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -446,7 +446,7 @@ class Prediction(Base):
     # Prediction Details
     prediction = Column(Integer, nullable=False)  # 0 or 1
     probability = Column(Numeric(5, 4), nullable=False)  # 0.0000 to 1.0000
-    customer_score = Column(Integer)  # 0-1000 scale
+    customer_score = Column(Integer)  # 0-100 scale
     risk_level = Column(String(10), nullable=False, index=True)  # 'low', 'medium', 'high'
     
     # Features
@@ -545,7 +545,7 @@ class DataVersion(Base):
     checksum_sha256 = Column(String(64), nullable=False)
     
     # Metadata
-    metadata = Column(JSONB)
+    data_metadata = Column(JSONB)
     dependencies = Column(ARRAY(Text))
     
     # Timestamps
@@ -559,6 +559,48 @@ class DataVersion(Base):
     def __repr__(self) -> str:
         """String representation of DataVersion."""
         return f"<DataVersion(data_type='{self.data_type}', version='{self.version}')>"
+
+
+class DataLineage(Base):
+    """Data lineage tracking model to track relationships between data versions, models, and predictions."""
+    
+    __tablename__ = "data_lineage"
+    
+    # Primary Key
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Source (upstream) - what data version was used
+    source_data_version_id = Column(Integer, ForeignKey("data_versions.id"), nullable=False, index=True)
+    source_data_type = Column(String(50), nullable=False)  # 'raw_transactions', 'processed', 'features', etc.
+    source_version = Column(String(50), nullable=False)
+    
+    # Target (downstream) - what was created from this data
+    target_type = Column(String(50), nullable=False, index=True)  # 'model', 'prediction', 'feature_set', 'processed_data'
+    target_id = Column(String(100), nullable=False, index=True)  # model_version, prediction_id, etc.
+    target_name = Column(String(200))  # Human-readable name
+    
+    # Relationship metadata
+    relationship_type = Column(String(50), nullable=False)  # 'trained_on', 'used_for', 'derived_from', 'generated_from'
+    operation = Column(String(100))  # 'training', 'prediction', 'feature_engineering', 'processing'
+    
+    # Additional context
+    lineage_metadata = Column(JSONB)  # Additional context (timestamp, user, etc.)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    
+    # Relationships
+    source_data_version = relationship("DataVersion", foreign_keys=[source_data_version_id])
+    
+    # Constraints
+    __table_args__ = (
+        Index("idx_lineage_source", "source_data_version_id", "target_type", "target_id"),
+        Index("idx_lineage_target", "target_type", "target_id"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of DataLineage."""
+        return f"<DataLineage(source={self.source_data_type}:{self.source_version} -> {self.target_type}:{self.target_id})>"
 
 
 class ModelMetadata(Base):
@@ -687,7 +729,7 @@ class PerformanceMetric(Base):
     model_version = Column(String(50))
     
     # Additional Metadata
-    metadata = Column(JSONB)
+    performance_metadata = Column(JSONB)
     
     # Indexes
     __table_args__ = (
@@ -729,7 +771,7 @@ class DriftMetric(Base):
     
     # Metadata
     model_version = Column(String(50))
-    metadata = Column(JSONB)
+    drift_metadata = Column(JSONB)
     
     # Indexes
     __table_args__ = (
@@ -740,3 +782,668 @@ class DriftMetric(Base):
     def __repr__(self) -> str:
         """String representation of DriftMetric."""
         return f"<DriftMetric(feature_name='{self.feature_name}', is_drifted={self.is_drifted}, psi={self.psi})>"
+
+
+# ============================================================================
+# A/B TESTING MODELS
+# ============================================================================
+
+class Experiment(Base):
+    """A/B testing experiment model."""
+    
+    __tablename__ = "experiments"
+    
+    # Primary Key
+    experiment_id = Column(Integer, primary_key=True, autoincrement=True)
+    experiment_name = Column(String(100), unique=True, nullable=False, index=True)
+    
+    # Experiment Configuration
+    description = Column(Text)
+    status = Column(String(20), nullable=False, default="draft", index=True)  # 'draft', 'running', 'paused', 'completed', 'cancelled'
+    
+    # Variants Configuration
+    variants = Column(JSONB, nullable=False)  # List of variant configs
+    
+    # Traffic Splitting
+    traffic_percentage = Column(Integer, default=100, nullable=False)  # 0-100
+    assignment_method = Column(String(50), default="hash", nullable=False)  # 'hash', 'random', 'customer_segment'
+    
+    # Experiment Dates
+    start_date = Column(DateTime(timezone=True))
+    end_date = Column(DateTime(timezone=True))
+    actual_started_at = Column(DateTime(timezone=True))
+    actual_ended_at = Column(DateTime(timezone=True))
+    
+    # Success Criteria
+    primary_metric = Column(String(50), default="accuracy", nullable=False)
+    minimum_sample_size = Column(Integer, default=1000, nullable=False)
+    significance_level = Column(Numeric(5, 4), default=0.05, nullable=False)
+    minimum_improvement = Column(Numeric(5, 4), default=0.01, nullable=False)  # 1%
+    
+    # Results
+    winner_variant = Column(String(100))
+    statistical_significance = Column(Numeric(5, 4))  # p-value
+    confidence_interval = Column(JSONB)
+    conclusion = Column(Text)
+    
+    # Metadata
+    created_by = Column(String(100))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    assignments = relationship("ExperimentAssignment", back_populates="experiment", cascade="all, delete-orphan")
+    metrics = relationship("ExperimentMetric", back_populates="experiment", cascade="all, delete-orphan")
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("status IN ('draft', 'running', 'paused', 'completed', 'cancelled')", name="chk_status"),
+        CheckConstraint("traffic_percentage >= 0 AND traffic_percentage <= 100", name="chk_traffic_percentage"),
+        CheckConstraint("significance_level > 0 AND significance_level < 1", name="chk_significance_level"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of Experiment."""
+        return f"<Experiment(experiment_id={self.experiment_id}, name='{self.experiment_name}', status='{self.status}')>"
+
+
+class ExperimentAssignment(Base):
+    """Experiment assignment model (tracks which variant each customer/request gets)."""
+    
+    __tablename__ = "experiment_assignments"
+    
+    # Primary Key
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Foreign Key
+    experiment_id = Column(Integer, ForeignKey("experiments.experiment_id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Assignment Details
+    entity_id = Column(String(100), nullable=False)  # Customer ID or request ID
+    entity_type = Column(String(50), default="customer", nullable=False)  # 'customer', 'request'
+    variant_name = Column(String(100), nullable=False, index=True)
+    
+    # Assignment Metadata
+    assignment_hash = Column(String(64))
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    experiment = relationship("Experiment", back_populates="assignments")
+    
+    # Constraints
+    __table_args__ = (
+        Index("uq_experiment_entity", "experiment_id", "entity_id", "entity_type", unique=True),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of ExperimentAssignment."""
+        return f"<ExperimentAssignment(experiment_id={self.experiment_id}, entity_id='{self.entity_id}', variant='{self.variant_name}')>"
+
+
+class ExperimentMetric(Base):
+    """Experiment metrics model (aggregated metrics per variant)."""
+    
+    __tablename__ = "experiment_metrics"
+    
+    # Primary Key
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Foreign Key
+    experiment_id = Column(Integer, ForeignKey("experiments.experiment_id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Variant Information
+    variant_name = Column(String(100), nullable=False, index=True)
+    
+    # Metrics
+    sample_size = Column(Integer, default=0, nullable=False)
+    accuracy = Column(Numeric(10, 6))
+    roc_auc = Column(Numeric(10, 6))
+    precision = Column(Numeric(10, 6))
+    recall = Column(Numeric(10, 6))
+    f1_score = Column(Numeric(10, 6))
+    avg_latency_ms = Column(Numeric(10, 2))
+    p95_latency_ms = Column(Numeric(10, 2))
+    error_rate = Column(Numeric(10, 6))
+    
+    # Business Metrics
+    total_predictions = Column(Integer, default=0, nullable=False)
+    high_risk_predictions = Column(Integer, default=0, nullable=False)
+    low_risk_predictions = Column(Integer, default=0, nullable=False)
+    
+    # Statistical Metrics
+    mean_value = Column(Numeric(10, 6))  # Mean of primary metric
+    std_value = Column(Numeric(10, 6))  # Standard deviation
+    confidence_interval_lower = Column(Numeric(10, 6))
+    confidence_interval_upper = Column(Numeric(10, 6))
+    
+    # Timestamps
+    calculated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    period_start = Column(DateTime(timezone=True))
+    period_end = Column(DateTime(timezone=True))
+    
+    # Relationships
+    experiment = relationship("Experiment", back_populates="metrics")
+    
+    def __repr__(self) -> str:
+        """String representation of ExperimentMetric."""
+        return f"<ExperimentMetric(experiment_id={self.experiment_id}, variant='{self.variant_name}', sample_size={self.sample_size})>"
+
+
+# ============================================================================
+# MODEL RETRAINING MODELS
+# ============================================================================
+
+class RetrainingJob(Base):
+    """Model retraining job model."""
+    
+    __tablename__ = "retraining_jobs"
+    
+    # Primary Key
+    job_id = Column(Integer, primary_key=True, autoincrement=True)
+    job_name = Column(String(100), nullable=False)
+    
+    # Job Configuration
+    trigger_type = Column(String(50), nullable=False, index=True)  # 'scheduled', 'drift', 'new_data', 'manual', 'performance_degradation'
+    trigger_metadata = Column(JSONB)
+    
+    # Training Configuration
+    model_name = Column(String(100), nullable=False, index=True)
+    model_type = Column(String(50))
+    training_data_version = Column(String(50))
+    feature_version = Column(String(50))
+    hyperparameters = Column(JSONB)
+    
+    # Job Status
+    status = Column(String(20), nullable=False, default="pending", index=True)  # 'pending', 'running', 'completed', 'failed', 'cancelled'
+    
+    # Training Results
+    training_metrics = Column(JSONB)
+    validation_metrics = Column(JSONB)
+    test_metrics = Column(JSONB)
+    
+    # Model Validation
+    validation_passed = Column(Boolean)
+    validation_errors = Column(ARRAY(Text))
+    baseline_comparison = Column(JSONB)
+    
+    # Model Promotion
+    promotion_status = Column(String(20))  # 'pending', 'promoted', 'rejected', 'rolled_back'
+    promoted_to_stage = Column(String(20))  # 'Staging', 'Production'
+    promotion_timestamp = Column(DateTime(timezone=True))
+    
+    # MLflow Integration
+    mlflow_run_id = Column(String(50), index=True)
+    mlflow_experiment_name = Column(String(100))
+    model_version = Column(String(50))
+    
+    # Timestamps
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Metadata
+    created_by = Column(String(100))
+    error_message = Column(Text)
+    job_metadata = Column(JSONB)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'cancelled')", name="chk_retraining_status"),
+        CheckConstraint("trigger_type IN ('scheduled', 'drift', 'new_data', 'manual', 'performance_degradation')", name="chk_trigger_type"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of RetrainingJob."""
+        return f"<RetrainingJob(job_id={self.job_id}, job_name='{self.job_name}', status='{self.status}')>"
+
+
+class RetrainingSchedule(Base):
+    """Retraining schedule model."""
+    
+    __tablename__ = "retraining_schedules"
+    
+    # Primary Key
+    schedule_id = Column(Integer, primary_key=True, autoincrement=True)
+    schedule_name = Column(String(100), unique=True, nullable=False)
+    
+    # Schedule Configuration
+    model_name = Column(String(100), nullable=False, index=True)
+    schedule_type = Column(String(20), nullable=False)  # 'daily', 'weekly', 'monthly', 'cron'
+    schedule_config = Column(JSONB, nullable=False)
+    
+    # Schedule Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_run_at = Column(DateTime(timezone=True))
+    next_run_at = Column(DateTime(timezone=True), index=True)
+    
+    # Training Configuration
+    training_config = Column(JSONB)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Metadata
+    created_by = Column(String(100))
+    description = Column(Text)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("schedule_type IN ('daily', 'weekly', 'monthly', 'cron')", name="chk_schedule_type"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of RetrainingSchedule."""
+        return f"<RetrainingSchedule(schedule_id={self.schedule_id}, schedule_name='{self.schedule_name}', is_active={self.is_active})>"
+
+
+class ModelValidationRule(Base):
+    """Model validation rule model."""
+    
+    __tablename__ = "model_validation_rules"
+    
+    # Primary Key
+    rule_id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_name = Column(String(100), unique=True, nullable=False)
+    
+    # Rule Configuration
+    model_name = Column(String(100), nullable=False, index=True)
+    metric_name = Column(String(50), nullable=False)  # 'accuracy', 'roc_auc', etc.
+    comparison_operator = Column(String(10), nullable=False)  # '>', '>=', '<', '<=', '=='
+    threshold_value = Column(Numeric(10, 6), nullable=False)
+    comparison_type = Column(String(20), default="absolute", nullable=False)  # 'absolute', 'relative_to_baseline', 'relative_improvement'
+    
+    # Baseline Configuration
+    baseline_model_version = Column(String(50))
+    minimum_improvement = Column(Numeric(5, 4))  # Minimum improvement percentage
+    
+    # Rule Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_required = Column(Boolean, default=True, nullable=False)  # If False, violation is warning
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Metadata
+    description = Column(Text)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("comparison_operator IN ('>', '>=', '<', '<=', '==', '!=')", name="chk_comparison_operator"),
+        CheckConstraint("comparison_type IN ('absolute', 'relative_to_baseline', 'relative_improvement')", name="chk_comparison_type"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of ModelValidationRule."""
+        return f"<ModelValidationRule(rule_id={self.rule_id}, rule_name='{self.rule_name}', metric='{self.metric_name}')>"
+
+
+# ============================================================================
+# BATCH PREDICTION MODELS
+# ============================================================================
+
+class BatchPredictionJob(Base):
+    """Batch prediction job model."""
+    
+    __tablename__ = "batch_prediction_jobs"
+    
+    # Primary Key
+    job_id = Column(Integer, primary_key=True, autoincrement=True)
+    job_name = Column(String(100), nullable=False)
+    
+    # Job Configuration
+    trigger_type = Column(String(50), nullable=False, index=True)  # 'manual', 'scheduled', 'event'
+    schedule_id = Column(Integer, index=True)
+    
+    # Input Configuration
+    input_source = Column(String(50), nullable=False)  # 'database', 'file', 'api'
+    input_config = Column(JSONB, nullable=False)
+    
+    # Processing Configuration
+    batch_size = Column(Integer, default=1000, nullable=False)
+    max_workers = Column(Integer, default=4, nullable=False)
+    use_feature_store = Column(Boolean, default=True, nullable=False)
+    model_name = Column(String(100), nullable=False)
+    model_version = Column(String(50))
+    model_stage = Column(String(20), default="Production", nullable=False)
+    
+    # Output Configuration
+    output_format = Column(String(20), nullable=False)  # 'database', 'file', 's3', 'parquet', 'csv'
+    output_config = Column(JSONB, nullable=False)
+    
+    # Job Status
+    status = Column(String(20), nullable=False, default="pending", index=True)  # 'pending', 'running', 'completed', 'failed', 'cancelled', 'paused'
+    
+    # Progress Tracking
+    total_records = Column(Integer)
+    processed_records = Column(Integer, default=0, nullable=False)
+    failed_records = Column(Integer, default=0, nullable=False)
+    progress_percentage = Column(Numeric(5, 2), default=0.0, nullable=False)
+    
+    # Results
+    output_path = Column(String(500))
+    output_file_size_bytes = Column(BigInteger)
+    records_per_second = Column(Numeric(10, 2))
+    
+    # Error Handling
+    error_message = Column(Text)
+    error_count = Column(Integer, default=0, nullable=False)
+    retry_count = Column(Integer, default=0, nullable=False)
+    max_retries = Column(Integer, default=3, nullable=False)
+    
+    # Timestamps
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Metadata
+    created_by = Column(String(100))
+    job_metadata = Column(JSONB)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'paused')", name="chk_batch_job_status"),
+        CheckConstraint("trigger_type IN ('manual', 'scheduled', 'event')", name="chk_trigger_type"),
+        CheckConstraint("input_source IN ('database', 'file', 'api')", name="chk_input_source"),
+        CheckConstraint("output_format IN ('database', 'file', 's3', 'parquet', 'csv')", name="chk_output_format"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of BatchPredictionJob."""
+        return f"<BatchPredictionJob(job_id={self.job_id}, job_name='{self.job_name}', status='{self.status}')>"
+
+
+class BatchPredictionSchedule(Base):
+    """Batch prediction schedule model."""
+    
+    __tablename__ = "batch_prediction_schedules"
+    
+    # Primary Key
+    schedule_id = Column(Integer, primary_key=True, autoincrement=True)
+    schedule_name = Column(String(100), unique=True, nullable=False)
+    
+    # Schedule Configuration
+    schedule_type = Column(String(20), nullable=False)  # 'daily', 'weekly', 'monthly', 'cron'
+    schedule_config = Column(JSONB, nullable=False)
+    
+    # Schedule Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    last_run_at = Column(DateTime(timezone=True))
+    next_run_at = Column(DateTime(timezone=True), index=True)
+    
+    # Job Configuration (template)
+    job_config = Column(JSONB, nullable=False)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Metadata
+    created_by = Column(String(100))
+    description = Column(Text)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("schedule_type IN ('daily', 'weekly', 'monthly', 'cron')", name="chk_batch_schedule_type"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of BatchPredictionSchedule."""
+        return f"<BatchPredictionSchedule(schedule_id={self.schedule_id}, schedule_name='{self.schedule_name}', is_active={self.is_active})>"
+
+
+class BatchPredictionResult(Base):
+    """Batch prediction result model."""
+    
+    __tablename__ = "batch_prediction_results"
+    
+    # Primary Key
+    result_id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(Integer, ForeignKey("batch_prediction_jobs.job_id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Customer Information
+    customer_id = Column(String(100), nullable=False, index=True)
+    
+    # Prediction Results
+    prediction = Column(Integer, nullable=False)  # 0 or 1
+    probability = Column(Numeric(5, 4), nullable=False)
+    customer_score = Column(Integer)
+    risk_level = Column(String(10), nullable=False)
+    
+    # Features (optional)
+    features = Column(JSONB)
+    
+    # Model Information
+    model_name = Column(String(100), nullable=False)
+    model_version = Column(String(50), nullable=False)
+    
+    # Processing Metadata
+    processing_time_ms = Column(Numeric(10, 2))
+    row_number = Column(Integer)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("prediction IN (0, 1)", name="chk_batch_prediction"),
+        CheckConstraint("probability >= 0 AND probability <= 1", name="chk_batch_probability"),
+        CheckConstraint("risk_level IN ('low', 'medium', 'high')", name="chk_batch_risk_level"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of BatchPredictionResult."""
+        return f"<BatchPredictionResult(result_id={self.result_id}, job_id={self.job_id}, customer_id='{self.customer_id}')>"
+
+
+class BatchPredictionLog(Base):
+    """Batch prediction log model."""
+    
+    __tablename__ = "batch_prediction_logs"
+    
+    # Primary Key
+    log_id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(Integer, ForeignKey("batch_prediction_jobs.job_id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Log Details
+    log_level = Column(String(20), nullable=False, index=True)  # 'INFO', 'WARNING', 'ERROR', 'DEBUG'
+    message = Column(Text, nullable=False)
+    error_details = Column(JSONB)
+    
+    # Context
+    record_index = Column(Integer)
+    customer_id = Column(String(100))
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("log_level IN ('INFO', 'WARNING', 'ERROR', 'DEBUG')", name="chk_batch_log_level"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of BatchPredictionLog."""
+        return f"<BatchPredictionLog(log_id={self.log_id}, job_id={self.job_id}, log_level='{self.log_level}')>"
+
+
+# ============================================================================
+# MULTI-MODEL SERVING MODELS
+# ============================================================================
+
+class ModelRoutingRule(Base):
+    """Model routing rule model."""
+    
+    __tablename__ = "model_routing_rules"
+    
+    # Primary Key
+    rule_id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_name = Column(String(100), unique=True, nullable=False)
+    
+    # Rule Configuration
+    priority = Column(Integer, nullable=False, default=0, index=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    
+    # Routing Criteria
+    routing_criteria = Column(JSONB, nullable=False)
+    routing_type = Column(String(50), nullable=False)  # 'single', 'ensemble', 'weighted_ensemble', 'comparison'
+    
+    # Target Models
+    target_models = Column(JSONB, nullable=False)
+    model_weights = Column(JSONB)
+    
+    # Fallback Configuration
+    fallback_model_name = Column(String(100))
+    fallback_model_stage = Column(String(20), default="Production", nullable=False)
+    
+    # Metadata
+    description = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_by = Column(String(100))
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("routing_type IN ('single', 'ensemble', 'weighted_ensemble', 'comparison')", name="chk_routing_type"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of ModelRoutingRule."""
+        return f"<ModelRoutingRule(rule_id={self.rule_id}, rule_name='{self.rule_name}', routing_type='{self.routing_type}')>"
+
+
+class ModelRegistry(Base):
+    """Extended model registry for multi-model serving."""
+    
+    __tablename__ = "model_registry"
+    
+    # Primary Key
+    registry_id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Model Information
+    model_name = Column(String(100), nullable=False, index=True)
+    model_version = Column(String(50), nullable=False)
+    model_stage = Column(String(20), nullable=False, index=True)  # 'Production', 'Staging', 'Archived'
+    
+    # Model Metadata
+    model_type = Column(String(50))
+    mlflow_run_id = Column(String(50))
+    mlflow_model_uri = Column(String(500))
+    
+    # Performance Metrics
+    accuracy = Column(Numeric(5, 4))
+    roc_auc = Column(Numeric(5, 4))
+    precision = Column(Numeric(5, 4))
+    recall = Column(Numeric(5, 4))
+    f1_score = Column(Numeric(5, 4))
+    
+    # Serving Configuration
+    is_loaded = Column(Boolean, default=False, nullable=False, index=True)
+    load_priority = Column(Integer, default=0, nullable=False, index=True)
+    max_concurrent_requests = Column(Integer, default=100, nullable=False)
+    
+    # Resource Requirements
+    memory_usage_mb = Column(Integer)
+    cpu_usage_percent = Column(Numeric(5, 2))
+    
+    # Status
+    status = Column(String(20), default="available", nullable=False, index=True)  # 'available', 'loading', 'unavailable', 'error'
+    error_message = Column(Text)
+    
+    # Timestamps
+    registered_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime(timezone=True))
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Metadata
+    model_metadata = Column("metadata", JSONB)  # Column name is 'metadata' in DB, but Python attribute is 'model_metadata'
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("model_stage IN ('Production', 'Staging', 'Archived')", name="chk_model_stage"),
+        CheckConstraint("status IN ('available', 'loading', 'unavailable', 'error')", name="chk_model_status"),
+    )
+    # Note: Unique constraint on (model_name, model_version) is defined in SQL schema
+    
+    def __repr__(self) -> str:
+        """String representation of ModelRegistry."""
+        return f"<ModelRegistry(registry_id={self.registry_id}, model_name='{self.model_name}', version='{self.model_version}', stage='{self.model_stage}')>"
+
+
+class ModelComparisonResult(Base):
+    """Model comparison result model."""
+    
+    __tablename__ = "model_comparison_results"
+    
+    # Primary Key
+    comparison_id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Comparison Configuration
+    comparison_name = Column(String(100))
+    comparison_type = Column(String(50), nullable=False, index=True)  # 'real_time', 'batch', 'historical'
+    
+    # Models Compared
+    model_1_name = Column(String(100), nullable=False, index=True)
+    model_1_version = Column(String(50), nullable=False)
+    model_2_name = Column(String(100), nullable=False, index=True)
+    model_2_version = Column(String(50), nullable=False)
+    
+    # Comparison Metrics
+    comparison_metrics = Column(JSONB, nullable=False)
+    differences = Column(JSONB)
+    winner = Column(String(100))
+    
+    # Test Data
+    test_samples = Column(Integer)
+    test_customer_ids = Column(ARRAY(Text))
+    
+    # Timestamps
+    compared_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_by = Column(String(100))
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("comparison_type IN ('real_time', 'batch', 'historical')", name="chk_comparison_type"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of ModelComparisonResult."""
+        return f"<ModelComparisonResult(comparison_id={self.comparison_id}, model_1='{self.model_1_name}', model_2='{self.model_2_name}')>"
+
+
+class ModelEnsemble(Base):
+    """Model ensemble configuration model."""
+    
+    __tablename__ = "model_ensembles"
+    
+    # Primary Key
+    ensemble_id = Column(Integer, primary_key=True, autoincrement=True)
+    ensemble_name = Column(String(100), unique=True, nullable=False)
+    
+    # Ensemble Configuration
+    ensemble_type = Column(String(50), nullable=False)  # 'voting', 'weighted_average', 'stacking'
+    model_configs = Column(JSONB, nullable=False)
+    
+    # Ensemble Metadata
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    description = Column(Text)
+    
+    # Performance
+    ensemble_metrics = Column(JSONB)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_by = Column(String(100))
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("ensemble_type IN ('voting', 'weighted_average', 'stacking')", name="chk_ensemble_type"),
+    )
+    
+    def __repr__(self) -> str:
+        """String representation of ModelEnsemble."""
+        return f"<ModelEnsemble(ensemble_id={self.ensemble_id}, ensemble_name='{self.ensemble_name}', ensemble_type='{self.ensemble_type}')>"

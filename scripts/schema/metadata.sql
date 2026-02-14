@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS data_versions (
     file_size BIGINT,  -- Size in bytes
     checksum_sha256 VARCHAR(64) NOT NULL,  -- SHA256 checksum
     
-    -- Metadata
-    metadata JSONB,  -- Additional metadata (shape, columns, etc.)
+    -- Metadata (using data_metadata to avoid SQLAlchemy reserved word conflict)
+    data_metadata JSONB,  -- Additional metadata (shape, columns, etc.)
     dependencies TEXT[],  -- Array of dependency versions
     
     -- Timestamps
@@ -77,6 +77,38 @@ CREATE INDEX IF NOT EXISTS idx_model_metadata_name ON model_metadata(model_name)
 CREATE INDEX IF NOT EXISTS idx_model_metadata_stage ON model_metadata(model_stage);
 CREATE INDEX IF NOT EXISTS idx_model_metadata_active ON model_metadata(is_active);
 
+-- Data Lineage Table
+CREATE TABLE IF NOT EXISTS data_lineage (
+    -- Primary Key
+    id SERIAL PRIMARY KEY,
+    
+    -- Source (upstream) - what data version was used
+    source_data_version_id INTEGER NOT NULL REFERENCES data_versions(id),
+    source_data_type VARCHAR(50) NOT NULL,  -- 'raw_transactions', 'processed', 'features', etc.
+    source_version VARCHAR(50) NOT NULL,
+    
+    -- Target (downstream) - what was created from this data
+    target_type VARCHAR(50) NOT NULL,  -- 'model', 'prediction', 'feature_set', 'processed_data'
+    target_id VARCHAR(100) NOT NULL,  -- model_version, prediction_id, etc.
+    target_name VARCHAR(200),  -- Human-readable name
+    
+    -- Relationship metadata
+    relationship_type VARCHAR(50) NOT NULL,  -- 'trained_on', 'used_for', 'derived_from', 'generated_from'
+    operation VARCHAR(100),  -- 'training', 'prediction', 'feature_engineering', 'processing'
+    
+    -- Additional context (note: using lineage_metadata instead of metadata to avoid SQLAlchemy conflict)
+    lineage_metadata JSONB,  -- Additional context (timestamp, user, etc.)
+    
+    -- Timestamps
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_lineage_source ON data_lineage(source_data_version_id, target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_lineage_target ON data_lineage(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_lineage_source_version ON data_lineage(source_data_version_id);
+CREATE INDEX IF NOT EXISTS idx_lineage_created ON data_lineage(created_at);
+
 -- Business KPIs Table
 CREATE TABLE IF NOT EXISTS business_kpis (
     -- Primary Key
@@ -124,4 +156,5 @@ CREATE INDEX IF NOT EXISTS idx_business_kpis_type ON business_kpis(period_type);
 -- Comments
 COMMENT ON TABLE data_versions IS 'Tracks versions of datasets, features, and artifacts with checksums';
 COMMENT ON TABLE model_metadata IS 'Tracks model versions, performance metrics, and deployment information';
+COMMENT ON TABLE data_lineage IS 'Tracks relationships between data versions, models, and predictions';
 COMMENT ON TABLE business_kpis IS 'Stores aggregated business metrics for reporting and analytics';

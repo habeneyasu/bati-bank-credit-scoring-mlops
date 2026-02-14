@@ -13,12 +13,16 @@ from sqlalchemy import func, and_, case, Integer
 
 from src.utils.logging import get_logger
 from src.database.connection import get_db_session
-from src.database.models import Prediction, RawTransaction, BusinessKPI
+from src.database.models import (
+    Prediction, RawTransaction, BusinessKPI, DataVersion, DataLineage
+)
 from src.database.repositories import (
     PredictionRepository,
     RawTransactionRepository,
     BusinessKPIRepository,
-    UserRepository
+    UserRepository,
+    DataVersionRepository,
+    DataLineageRepository
 )
 from src.database.exceptions import (
     DatabaseError,
@@ -67,7 +71,7 @@ class PredictionService:
             customer_id: Customer identifier
             prediction: Binary prediction (0 or 1)
             probability: Probability of high-risk
-            customer_score: Credit score (0-1000)
+            customer_score: Credit score (0-100)
             risk_level: Risk level ('low', 'medium', 'high')
             features: List of 26 feature values
             model_name: Model name
@@ -413,3 +417,198 @@ class BusinessKPIService:
                 f"Failed to calculate KPIs: {str(e)}",
                 original_error=e
             )
+
+
+class DataVersionService:
+    """Service for data versioning operations."""
+    
+    def __init__(self, session: Session):
+        """
+        Initialize data version service.
+        
+        Args:
+            session: Database session
+        """
+        self.session = session
+        self.repository = DataVersionRepository(session)
+        self.logger = get_logger(f"{__name__}.DataVersionService")
+    
+    def create_version(
+        self,
+        data_type: str,
+        version: str,
+        file_path: str,
+        file_size: int,
+        checksum_sha256: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        dependencies: Optional[List[str]] = None
+    ) -> DataVersion:
+        """
+        Create a new data version record.
+        
+        Args:
+            data_type: Type of data ('raw_transactions', 'processed', 'features', etc.)
+            version: Version string (e.g., 'v1', 'v2')
+            file_path: Path to the data file
+            file_size: Size in bytes
+            checksum_sha256: SHA256 checksum
+            metadata: Additional metadata (JSON)
+            dependencies: List of dependency versions
+            
+        Returns:
+            Created DataVersion instance
+        """
+        try:
+            # Check if version already exists
+            existing = self.repository.get_by_type_and_version(data_type, version)
+            if existing:
+                self.logger.warning(
+                    f"Data version {data_type}:{version} already exists",
+                    extra={"data_type": data_type, "version": version}
+                )
+                return existing
+            
+            version_data = {
+                "data_type": data_type,
+                "version": version,
+                "file_path": file_path,
+                "file_size": file_size,
+                "checksum_sha256": checksum_sha256,
+                "data_metadata": metadata or {},
+                "dependencies": dependencies or []
+            }
+            
+            data_version = self.repository.create(**version_data)
+            
+            self.logger.info(
+                f"Created data version {data_type}:{version}",
+                extra={"data_type": data_type, "version": version}
+            )
+            
+            return data_version
+            
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create data version: {e}",
+                extra={"data_type": data_type, "version": version},
+                exc_info=True
+            )
+            raise DatabaseError(
+                f"Failed to create data version: {str(e)}",
+                original_error=e
+            )
+    
+    def get_latest_version(self, data_type: str) -> Optional[DataVersion]:
+        """Get latest version for a data type."""
+        return self.repository.get_latest_by_type(data_type)
+    
+    def get_version(self, data_type: str, version: str) -> Optional[DataVersion]:
+        """Get specific version."""
+        return self.repository.get_by_type_and_version(data_type, version)
+
+
+class DataLineageService:
+    """Service for data lineage tracking operations."""
+    
+    def __init__(self, session: Session):
+        """
+        Initialize data lineage service.
+        
+        Args:
+            session: Database session
+        """
+        self.session = session
+        self.repository = DataLineageRepository(session)
+        self.logger = get_logger(f"{__name__}.DataLineageService")
+    
+    def create_lineage(
+        self,
+        source_data_version_id: int,
+        source_data_type: str,
+        source_version: str,
+        target_type: str,
+        target_id: str,
+        target_name: Optional[str] = None,
+        relationship_type: str = "used_for",
+        operation: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> DataLineage:
+        """
+        Create a lineage record linking data version to a target.
+        
+        Args:
+            source_data_version_id: ID of the source data version
+            source_data_type: Type of source data
+            source_version: Version of source data
+            target_type: Type of target ('model', 'prediction', 'feature_set', etc.)
+            target_id: ID of target (model_version, prediction_id, etc.)
+            target_name: Human-readable name of target
+            relationship_type: Type of relationship ('trained_on', 'used_for', 'derived_from', etc.)
+            operation: Operation performed ('training', 'prediction', 'feature_engineering', etc.)
+            metadata: Additional context
+            
+        Returns:
+            Created DataLineage instance
+        """
+        try:
+            lineage_data = {
+                "source_data_version_id": source_data_version_id,
+                "source_data_type": source_data_type,
+                "source_version": source_version,
+                "target_type": target_type,
+                "target_id": target_id,
+                "target_name": target_name,
+                "relationship_type": relationship_type,
+                "operation": operation,
+                "lineage_metadata": metadata or {}
+            }
+            
+            lineage = self.repository.create(**lineage_data)
+            
+            self.logger.info(
+                f"Created lineage: {source_data_type}:{source_version} -> {target_type}:{target_id}",
+                extra={
+                    "source_data_type": source_data_type,
+                    "source_version": source_version,
+                    "target_type": target_type,
+                    "target_id": target_id
+                }
+            )
+            
+            return lineage
+            
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create lineage: {e}",
+                extra={
+                    "source_data_version_id": source_data_version_id,
+                    "target_type": target_type,
+                    "target_id": target_id
+                },
+                exc_info=True
+            )
+            raise DatabaseError(
+                f"Failed to create lineage: {str(e)}",
+                original_error=e
+            )
+    
+    def get_lineage_by_source(self, source_data_version_id: int) -> List[DataLineage]:
+        """Get all lineage records for a source data version."""
+        return self.repository.get_by_source_version(source_data_version_id)
+    
+    def get_lineage_by_target(
+        self,
+        target_type: str,
+        target_id: str
+    ) -> List[DataLineage]:
+        """Get all lineage records for a target."""
+        return self.repository.get_by_target(target_type, target_id)
+    
+    def get_lineage_graph(
+        self,
+        data_version_id: Optional[int] = None,
+        target_type: Optional[str] = None,
+        target_id: Optional[str] = None
+    ) -> List[DataLineage]:
+        """Get lineage graph with optional filters."""
+        return self.repository.get_lineage_graph(data_version_id, target_type, target_id)

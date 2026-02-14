@@ -28,3 +28,5 @@ requests>=2.31
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
 alembic>=1.12
+locust>=2.17.0
+aiohttp>=3.9.0
