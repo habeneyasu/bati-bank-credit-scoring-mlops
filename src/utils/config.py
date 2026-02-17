@@ -73,15 +73,19 @@ class Settings(BaseSettings):
     )
     
     # Risk Thresholds
+    # NOTE: These thresholds are used as fallback when adaptive thresholds cannot be calculated.
+    # The system uses adaptive percentile-based thresholds (33rd and 67th percentiles) from recent
+    # predictions to ensure a balanced distribution across low, medium, and high risk categories.
+    # These fixed thresholds are only used when there are fewer than 10 recent predictions.
     risk_threshold_low: float = Field(
-        default=0.30,
-        description="Low risk threshold (probability < threshold)",
+        default=0.15,  # Lower threshold for low risk (probability < threshold = low risk)
+        description="Low risk threshold (probability < threshold). Used as fallback when adaptive thresholds unavailable.",
         ge=0.0,
         le=1.0
     )
     risk_threshold_high: float = Field(
-        default=0.60,
-        description="High risk threshold (probability > threshold)",
+        default=0.20,  # Higher threshold for high risk (probability > threshold = high risk)
+        description="High risk threshold (probability > threshold). Used as fallback when adaptive thresholds unavailable.",
         ge=0.0,
         le=1.0
     )
@@ -116,6 +120,64 @@ class Settings(BaseSettings):
     enable_rate_limiting: bool = Field(
         default=False,
         description="Enable rate limiting"
+    )
+    
+    # PII Redaction Configuration (GDPR/CCPA Compliance)
+    enable_pii_redaction: bool = Field(
+        default=True,
+        description="Enable PII redaction in logs and responses"
+    )
+    pii_redaction_strategy: str = Field(
+        default="mask",
+        description="PII redaction strategy: mask, hash, remove, partial_mask"
+    )
+    enable_pii_redaction_logging: bool = Field(
+        default=True,
+        description="Log PII redaction actions"
+    )
+    redact_in_logs: bool = Field(
+        default=True,
+        description="Redact PII in application logs"
+    )
+    redact_in_responses: bool = Field(
+        default=False,
+        description="Redact PII in API responses (use with caution)"
+    )
+    
+    # Distributed Tracing Configuration (OpenTelemetry)
+    enable_distributed_tracing: bool = Field(
+        default=False,
+        description="Enable OpenTelemetry distributed tracing"
+    )
+    tracing_service_name: str = Field(
+        default="credit-scoring-api",
+        description="Service name for tracing"
+    )
+    tracing_service_version: str = Field(
+        default="1.0.0",
+        description="Service version for tracing"
+    )
+    tracing_exporter: str = Field(
+        default="console",
+        description="Tracing exporter type: console, otlp, jaeger, zipkin"
+    )
+    tracing_otlp_endpoint: str = Field(
+        default="http://localhost:4317",
+        description="OTLP exporter endpoint"
+    )
+    tracing_jaeger_endpoint: str = Field(
+        default="http://localhost:14268/api/traces",
+        description="Jaeger collector endpoint"
+    )
+    tracing_zipkin_endpoint: str = Field(
+        default="http://localhost:9411/api/v2/spans",
+        description="Zipkin collector endpoint"
+    )
+    tracing_sample_rate: float = Field(
+        default=1.0,
+        description="Trace sampling rate (0.0 to 1.0)",
+        ge=0.0,
+        le=1.0
     )
     
     # Monitoring Configuration

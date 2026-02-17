@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Play, Clock, CheckCircle, XCircle, AlertTriangle, TrendingUp, Settings, Calendar, Zap } from 'lucide-react';
+import { RefreshCw, Play, Clock, CheckCircle, XCircle, AlertTriangle, TrendingUp, Settings, Calendar, Zap, Plus, X } from 'lucide-react';
 import { creditScoringAPI } from '../utils/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const ModelRetraining = () => {
   const [jobs, setJobs] = useState([]);
@@ -9,6 +10,16 @@ const ModelRetraining = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('jobs');
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newJob, setNewJob] = useState({
+    job_name: '',
+    model_name: 'credit_scoring_model',
+    model_type: 'random_forest',
+    trigger_type: 'manual'
+  });
+  
+  const { user, hasPermission } = useAuth();
 
   useEffect(() => {
     loadJobs();
@@ -68,6 +79,32 @@ const ModelRetraining = () => {
     }
   };
 
+  const handleCreateJob = async (e) => {
+    e.preventDefault();
+    setCreating(true);
+    setError(null);
+    try {
+      const result = await creditScoringAPI.createRetrainingJob(newJob);
+      setShowCreateForm(false);
+      setNewJob({
+        job_name: '',
+        model_name: 'credit_scoring_model',
+        model_type: 'random_forest',
+        trigger_type: 'manual'
+      });
+      await loadJobs();
+      // Select the newly created job
+      if (result.job_id) {
+        await loadJobDetails(result.job_id);
+      }
+      alert('Retraining job created successfully');
+    } catch (err) {
+      setError(err.message || 'Failed to create retraining job');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     try {
@@ -124,22 +161,144 @@ const ModelRetraining = () => {
           <h2 className="text-2xl font-bold text-gray-900">Model Retraining Pipeline</h2>
           <p className="text-sm text-gray-600 mt-1">Automated model retraining, validation, and promotion</p>
         </div>
-        <button
-          onClick={() => { loadJobs(); loadSchedules(); }}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {(hasPermission('model:write') || user?.is_superuser) && (
+            <button
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" />
+              Create Job
+            </button>
+          )}
+          <button
+            onClick={() => { loadJobs(); loadSchedules(); }}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && (
         <div className="p-4 bg-red-50 border-l-4 border-red-400">
-          <div className="flex items-center gap-2 text-red-700">
-            <XCircle className="w-5 h-5" />
-            <span className="text-sm">{error}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-red-700">
+              <XCircle className="w-5 h-5" />
+              <span className="text-sm">{error}</span>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-700 hover:text-red-900"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
+        </div>
+      )}
+
+      {/* Create Job Form */}
+      {showCreateForm && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Create Retraining Job</h3>
+            <button
+              onClick={() => setShowCreateForm(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <form onSubmit={handleCreateJob} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Job Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={newJob.job_name}
+                onChange={(e) => setNewJob({ ...newJob, job_name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., Monthly Retraining - Jan 2024"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Model Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newJob.model_name}
+                  onChange={(e) => setNewJob({ ...newJob, model_name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Model Type *
+                </label>
+                <select
+                  required
+                  value={newJob.model_type}
+                  onChange={(e) => setNewJob({ ...newJob, model_type: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="random_forest">Random Forest</option>
+                  <option value="logistic_regression">Logistic Regression</option>
+                  <option value="gradient_boosting">Gradient Boosting</option>
+                  <option value="xgboost">XGBoost</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Trigger Type *
+                </label>
+                <select
+                  required
+                  value={newJob.trigger_type}
+                  onChange={(e) => setNewJob({ ...newJob, trigger_type: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="manual">Manual</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="drift">Data Drift</option>
+                  <option value="new_data">New Data</option>
+                  <option value="performance_degradation">Performance Degradation</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={creating}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {creating ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    Create Job
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -175,10 +334,41 @@ const ModelRetraining = () => {
           {/* Jobs List */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Jobs</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Recent Jobs</h3>
+                {(hasPermission('model:write') || user?.is_superuser) && jobs.length > 0 && (
+                  <button
+                    onClick={() => setShowCreateForm(true)}
+                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"
+                    title="Create new job"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
               <div className="space-y-2">
                 {jobs.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">No retraining jobs found</p>
+                  <div className="text-center py-8">
+                    <RefreshCw className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                    <p className="text-sm text-gray-500 mb-2">No retraining jobs found</p>
+                    {(hasPermission('model:write') || user?.is_superuser) ? (
+                      <button
+                        onClick={() => setShowCreateForm(true)}
+                        className="mt-3 flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 mx-auto"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Create Your First Job
+                      </button>
+                    ) : (
+                      <div className="mt-3 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-md">
+                        <p className="text-xs text-yellow-800">
+                          <strong>Permission Required:</strong> You need <code className="bg-yellow-100 px-1 rounded">model:write</code> permission to create retraining jobs.
+                          <br />
+                          Contact an administrator to grant this permission.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   jobs.map((job) => (
                     <div

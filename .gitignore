@@ -63,11 +63,52 @@ Thumbs.db
 # MLflow
 mlruns/
 
-# Coverage
+# Coverage reports
 .coverage
+.coverage.*
 htmlcov/
 .pytest_cache/
 
-# Documentation (exclude all .md files except README.md)
+# Documentation
+# Exclude markdown files except README and mandatory documentation
 *.md
 !README.md
+# Mandatory regulatory documentation
+!docs/MODEL_CARD.md
+!docs/GOVERNANCE_POLICY.md
+!docs/FAIRNESS_ANALYSIS.md
+!docs/TECHNICAL_DOCUMENTATION.md
+!docs/USER_ROLES_SETUP.md
+# Demo and setup guides
+!DEMO_GUIDE.md
+!QUICK_START_DEMO.md
+# Component-specific READMEs
+!frontend/README.md
+!frontend/SETUP.md
+!src/database/README.md
+
+# Temporary/Diagnostic Reports
+diagnostic_report.json
+training_review_report.json
+recalibration_guide.json
+SECOND_INTERIM_PROGRESS_REPORT.md
+
+# Diagnostic/Temporary Scripts (optional - uncomment if you want to ignore these)
+# scripts/diagnose_scoring.py
+# scripts/diagnose_scoring_standalone.py
+# scripts/recalibrate_model.py
+
+# Frontend build artifacts
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/node_modules/
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# Temporary files
+*.tmp
+*.temp
+*.bak

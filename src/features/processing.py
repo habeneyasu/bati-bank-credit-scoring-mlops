@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict
 import joblib
 import warnings
+from src.utils.logging import get_logger
 
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
@@ -241,6 +242,7 @@ class DataProcessor:
         
         self.pipeline_ = None
         self.feature_names_ = None
+        self.logger = get_logger(f"{__name__}.DataProcessor")
     
     def _detect_column_types(self, df: pd.DataFrame) -> Tuple[List[str], List[str]]:
         """Auto-detect categorical and numerical columns."""
@@ -407,6 +409,36 @@ class DataProcessor:
         if isinstance(transformed, np.ndarray):
             # Get feature names from pipeline
             feature_names = self._get_feature_names()
+            
+            # If feature names are empty, generate generic names based on array shape
+            if not feature_names or len(feature_names) != transformed.shape[1]:
+                feature_names = [f"feature_{i}" for i in range(transformed.shape[1])]
+                try:
+                    self.logger.warning(
+                        f"Feature names not available, generated {len(feature_names)} generic names. "
+                        f"Array shape: {transformed.shape}, Expected names: {len(self.feature_names_) if self.feature_names_ else 0}"
+                    )
+                except AttributeError:
+                    # Logger not initialized, use print as fallback
+                    warnings.warn(
+                        f"Feature names not available, generated {len(feature_names)} generic names. "
+                        f"Array shape: {transformed.shape}"
+                    )
+            
+            # Ensure feature names match array shape
+            if len(feature_names) != transformed.shape[1]:
+                try:
+                    self.logger.warning(
+                        f"Feature names count ({len(feature_names)}) doesn't match array shape ({transformed.shape[1]}). "
+                        f"Generating generic names."
+                    )
+                except AttributeError:
+                    warnings.warn(
+                        f"Feature names count ({len(feature_names)}) doesn't match array shape ({transformed.shape[1]}). "
+                        f"Generating generic names."
+                    )
+                feature_names = [f"feature_{i}" for i in range(transformed.shape[1])]
+            
             df_transformed = pd.DataFrame(transformed, columns=feature_names, index=df.index)
         else:
             df_transformed = transformed

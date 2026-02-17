@@ -159,6 +159,12 @@ export const creditScoringAPI = {
     return response.data;
   },
 
+  // Get model validation metrics
+  async getModelValidationMetrics() {
+    const response = await api.get('/api/model/validation-metrics');
+    return response.data;
+  },
+
   // User & Role Management Endpoints
   // Get users
   async getUsers(limit = 100, offset = 0, isActive = null) {

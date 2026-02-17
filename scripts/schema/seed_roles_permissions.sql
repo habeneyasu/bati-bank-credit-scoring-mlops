@@ -31,6 +31,7 @@ INSERT INTO permissions (permission_name, permission_code, resource_type, action
     ('Deploy Models', 'model:deploy', 'model', 'write', 'Deploy models to production'),
     ('View Model Registry', 'model:registry', 'model', 'read', 'View model registry and versions'),
     ('Manage Model Registry', 'model:manage', 'model', 'write', 'Manage model registry and versions'),
+    ('Manage Model Experiments', 'model:write', 'model', 'write', 'Create and manage A/B testing experiments'),
     
     -- Dashboard Permissions
     ('View Dashboard', 'dashboard:read', 'dashboard', 'read', 'View main dashboard'),
@@ -57,7 +58,7 @@ FROM roles r, permissions p
 WHERE r.role_code = 'super_admin'
 ON CONFLICT DO NOTHING;
 
--- Data Admin: Data and prediction permissions
+-- Data Admin: Data and prediction permissions + model:write
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.role_id, p.permission_id
 FROM roles r, permissions p
@@ -65,11 +66,12 @@ WHERE r.role_code = 'data_admin'
   AND p.permission_code IN (
     'data:upload', 'data:read', 'data:delete', 'data:process', 'data:metrics',
     'prediction:read', 'prediction:customer', 'prediction:export',
+    'model:write',
     'dashboard:read', 'dashboard:kpis', 'dashboard:monitoring'
   )
 ON CONFLICT DO NOTHING;
 
--- Data Analyst: Read-only data and prediction permissions
+-- Data Analyst: Read-only data and prediction permissions + model:write
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.role_id, p.permission_id
 FROM roles r, permissions p
@@ -77,7 +79,7 @@ WHERE r.role_code = 'data_analyst'
   AND p.permission_code IN (
     'data:read', 'data:metrics',
     'prediction:read', 'prediction:customer', 'prediction:export',
-    'model:performance', 'model:registry',
+    'model:performance', 'model:registry', 'model:write',
     'dashboard:read', 'dashboard:kpis', 'dashboard:monitoring'
   )
 ON CONFLICT DO NOTHING;
@@ -89,29 +91,31 @@ FROM roles r, permissions p
 WHERE r.role_code = 'model_developer'
   AND p.permission_code IN (
     'data:read', 'data:metrics',
-    'model:performance', 'model:train', 'model:deploy', 'model:registry', 'model:manage',
+    'model:performance', 'model:train', 'model:deploy', 'model:registry', 'model:manage', 'model:write',
     'dashboard:read', 'dashboard:monitoring'
   )
 ON CONFLICT DO NOTHING;
 
--- Business User: Business-focused permissions
+-- Business User: Business-focused permissions + model:write
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.role_id, p.permission_id
 FROM roles r, permissions p
 WHERE r.role_code = 'business_user'
   AND p.permission_code IN (
     'prediction:read', 'prediction:customer',
+    'model:write',
     'dashboard:read', 'dashboard:kpis'
   )
 ON CONFLICT DO NOTHING;
 
--- Viewer: Read-only dashboard access
+-- Viewer: Read-only dashboard access + model:write
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.role_id, p.permission_id
 FROM roles r, permissions p
 WHERE r.role_code = 'viewer'
   AND p.permission_code IN (
-    'dashboard:read', 'dashboard:kpis'
+    'dashboard:read', 'dashboard:kpis',
+    'model:write'
   )
 ON CONFLICT DO NOTHING;
 

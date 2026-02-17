@@ -1,17 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { FlaskConical, Play, Square, TrendingUp, BarChart3, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { FlaskConical, Play, Square, TrendingUp, BarChart3, CheckCircle, XCircle, Clock, AlertCircle, Plus, X } from 'lucide-react';
 import { creditScoringAPI } from '../utils/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const ABTesting = () => {
+  const { user, hasPermission } = useAuth();
   const [experiments, setExperiments] = useState([]);
   const [selectedExperiment, setSelectedExperiment] = useState(null);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [modelVersions, setModelVersions] = useState([]);
+  const [createFormData, setCreateFormData] = useState({
+    experiment_name: '',
+    description: '',
+    variants: [
+      { name: 'control', model_version: 'Production', traffic_percentage: 50 },
+      { name: 'treatment', model_version: 'Staging', traffic_percentage: 50 }
+    ],
+    traffic_percentage: 100,
+    assignment_method: 'hash',
+    primary_metric: 'accuracy',
+    minimum_sample_size: 1000,
+    significance_level: 0.05,
+    minimum_improvement: 0.01
+  });
 
   useEffect(() => {
     loadExperiments();
+    loadModelVersions();
   }, []);
+
+  const loadModelVersions = async () => {
+    try {
+      const data = await creditScoringAPI.getModelVersions();
+      if (data.versions) {
+        setModelVersions(data.versions);
+      }
+    } catch (err) {
+      console.error('Error loading model versions:', err);
+    }
+  };
 
   useEffect(() => {
     if (selectedExperiment) {
@@ -71,6 +101,98 @@ const ABTesting = () => {
     }
   };
 
+  const handleCreateExperiment = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      // Validate variants traffic percentages sum to 100
+      const totalTraffic = createFormData.variants.reduce((sum, v) => sum + (v.traffic_percentage || 0), 0);
+      if (totalTraffic !== 100) {
+        setError(`Variant traffic percentages must sum to 100% (currently ${totalTraffic}%)`);
+        setLoading(false);
+        return;
+      }
+
+      await creditScoringAPI.createExperiment({
+        experiment_name: createFormData.experiment_name,
+        description: createFormData.description,
+        variants: createFormData.variants,
+        traffic_percentage: createFormData.traffic_percentage,
+        assignment_method: createFormData.assignment_method,
+        primary_metric: createFormData.primary_metric,
+        minimum_sample_size: createFormData.minimum_sample_size,
+        significance_level: createFormData.significance_level,
+        minimum_improvement: createFormData.minimum_improvement
+      });
+      
+      setShowCreateForm(false);
+      setCreateFormData({
+        experiment_name: '',
+        description: '',
+        variants: [
+          { name: 'control', model_version: 'Production', traffic_percentage: 50 },
+          { name: 'treatment', model_version: 'Staging', traffic_percentage: 50 }
+        ],
+        traffic_percentage: 100,
+        assignment_method: 'hash',
+        primary_metric: 'accuracy',
+        minimum_sample_size: 1000,
+        significance_level: 0.05,
+        minimum_improvement: 0.01
+      });
+      loadExperiments();
+    } catch (err) {
+      // Extract error message from API response
+      let errorMessage = 'Failed to create experiment';
+      if (err.response) {
+        if (err.response.status === 403) {
+          errorMessage = 'Permission denied: You need "model:write" permission or superuser access to create experiments. Please contact your administrator.';
+        } else if (err.response.data?.detail) {
+          errorMessage = err.response.data.detail;
+        } else if (err.response.status === 400) {
+          errorMessage = err.response.data?.detail || 'Invalid experiment configuration. Please check your inputs.';
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addVariant = () => {
+    setCreateFormData({
+      ...createFormData,
+      variants: [
+        ...createFormData.variants,
+        { name: `variant_${createFormData.variants.length + 1}`, model_version: 'Production', traffic_percentage: 0 }
+      ]
+    });
+  };
+
+  const removeVariant = (index) => {
+    const newVariants = createFormData.variants.filter((_, i) => i !== index);
+    // Redistribute traffic if removing a variant
+    const removedTraffic = createFormData.variants[index].traffic_percentage;
+    const remainingCount = newVariants.length;
+    if (remainingCount > 0) {
+      const perVariant = Math.floor(removedTraffic / remainingCount);
+      const remainder = removedTraffic % remainingCount;
+      newVariants.forEach((v, i) => {
+        v.traffic_percentage = perVariant + (i < remainder ? 1 : 0);
+      });
+    }
+    setCreateFormData({ ...createFormData, variants: newVariants });
+  };
+
+  const updateVariant = (index, field, value) => {
+    const newVariants = [...createFormData.variants];
+    newVariants[index] = { ...newVariants[index], [field]: value };
+    setCreateFormData({ ...createFormData, variants: newVariants });
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     try {
@@ -114,14 +236,41 @@ const ABTesting = () => {
           <h2 className="text-2xl font-bold text-gray-900">A/B Testing Experiments</h2>
           <p className="text-sm text-gray-600 mt-1">Compare model variants and determine winners</p>
         </div>
-        <button
-          onClick={loadExperiments}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-        >
-          <BarChart3 className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {hasPermission('model:write') || user?.is_superuser ? (
+            <button
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Plus className="w-4 h-4" />
+              Create Experiment
+            </button>
+          ) : (
+            <div className="relative group">
+              <div className="flex items-center gap-2 px-4 py-2 text-sm text-gray-500 bg-gray-100 rounded-md cursor-not-allowed">
+                <Plus className="w-4 h-4" />
+                Create Experiment
+              </div>
+              <div className="absolute left-0 top-full mt-2 w-64 p-3 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                <p className="font-semibold mb-1">Permission Required</p>
+                <p className="text-gray-300">
+                  You need the <code className="bg-gray-700 px-1 rounded">model:write</code> permission or superuser access to create experiments.
+                </p>
+                <p className="text-gray-400 mt-2 text-xs">
+                  Contact your administrator to assign the <code className="bg-gray-700 px-1 rounded">model_developer</code> role or run the migration script.
+                </p>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={loadExperiments}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            <BarChart3 className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -130,6 +279,187 @@ const ABTesting = () => {
             <XCircle className="w-5 h-5" />
             <span className="text-sm">{error}</span>
           </div>
+        </div>
+      )}
+
+      {!hasPermission('model:write') && !user?.is_superuser && (
+        <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-md">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-yellow-800 mb-1">Permission Required</h3>
+              <p className="text-sm text-yellow-700 mb-2">
+                You need the <code className="bg-yellow-100 px-1.5 py-0.5 rounded text-xs font-mono">model:write</code> permission to create A/B testing experiments.
+              </p>
+              <div className="text-xs text-yellow-600 space-y-1">
+                <p><strong>To fix this:</strong></p>
+                <ol className="list-decimal list-inside ml-2 space-y-0.5">
+                  <li>Run the migration script: <code className="bg-yellow-100 px-1 py-0.5 rounded">scripts/add_model_write_permission.sql</code></li>
+                  <li>Or have an administrator assign you the <code className="bg-yellow-100 px-1 py-0.5 rounded">model_developer</code> role</li>
+                  <li>Or log in as a superuser account</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Experiment Form */}
+      {showCreateForm && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Create New Experiment</h3>
+            <button
+              onClick={() => setShowCreateForm(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <form onSubmit={handleCreateExperiment} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Experiment Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={createFormData.experiment_name}
+                onChange={(e) => setCreateFormData({ ...createFormData, experiment_name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., Random Forest vs XGBoost"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description
+              </label>
+              <textarea
+                value={createFormData.description}
+                onChange={(e) => setCreateFormData({ ...createFormData, description: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={2}
+                placeholder="Describe the experiment purpose..."
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Variants *
+                </label>
+                <button
+                  type="button"
+                  onClick={addVariant}
+                  className="text-sm text-blue-600 hover:text-blue-700"
+                >
+                  + Add Variant
+                </button>
+              </div>
+              <div className="space-y-3">
+                {createFormData.variants.map((variant, index) => (
+                  <div key={index} className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
+                    <input
+                      type="text"
+                      required
+                      value={variant.name}
+                      onChange={(e) => updateVariant(index, 'name', e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Variant name"
+                    />
+                    <select
+                      value={variant.model_version}
+                      onChange={(e) => updateVariant(index, 'model_version', e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="Production">Production</option>
+                      <option value="Staging">Staging</option>
+                      {modelVersions.map((mv) => (
+                        <option key={mv.version} value={mv.version}>
+                          Version {mv.version} ({mv.stage})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      max="100"
+                      value={variant.traffic_percentage}
+                      onChange={(e) => updateVariant(index, 'traffic_percentage', parseInt(e.target.value) || 0)}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="%"
+                    />
+                    <span className="text-sm text-gray-600">%</span>
+                    {createFormData.variants.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeVariant(index)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Total: {createFormData.variants.reduce((sum, v) => sum + (v.traffic_percentage || 0), 0)}%
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Primary Metric
+                </label>
+                <select
+                  value={createFormData.primary_metric}
+                  onChange={(e) => setCreateFormData({ ...createFormData, primary_metric: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="accuracy">Accuracy</option>
+                  <option value="roc_auc">ROC-AUC</option>
+                  <option value="precision">Precision</option>
+                  <option value="recall">Recall</option>
+                  <option value="f1">F1 Score</option>
+                  <option value="latency">Latency</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Minimum Sample Size
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="100"
+                  value={createFormData.minimum_sample_size}
+                  onChange={(e) => setCreateFormData({ ...createFormData, minimum_sample_size: parseInt(e.target.value) || 1000 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-4 border-t">
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Creating...' : 'Create Experiment'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

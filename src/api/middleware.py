@@ -1,11 +1,12 @@
 """
 Custom middleware for the credit scoring API.
 
-Includes rate limiting, request logging, and error handling.
+Includes rate limiting, request logging, error handling, and PII redaction.
 """
 
 import time
-from typing import Callable
+import json
+from typing import Callable, Dict, Any
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -15,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.utils.config import settings
 from src.utils.logging import get_logger
+from src.utils.pii_redaction import redact_pii, get_redactor
 
 logger = get_logger(__name__)
 
@@ -69,37 +71,63 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware for logging all requests and responses."""
+    """Middleware for logging all requests and responses with PII redaction."""
+    
+    def __init__(self, app):
+        super().__init__(app)
+        self.redactor = get_redactor() if settings.enable_pii_redaction and settings.redact_in_logs else None
+    
+    def _redact_log_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Redact PII from log data if enabled."""
+        if self.redactor and settings.redact_in_logs:
+            return self.redactor.redact_dict(data, recursive=True)
+        return data
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Log request and response details."""
+        """Log request and response details with PII redaction."""
         start_time = time.time()
+        
+        # Prepare request log data
+        request_log_data = {
+            "method": request.method,
+            "path": request.url.path,
+            "query_params": str(request.query_params),
+            "client_ip": request.client.host if request.client else "unknown",
+            "user_agent": request.headers.get("user-agent", "unknown")
+        }
+        
+        # Note: Request body is not read here to avoid consuming the stream
+        # Body will be read by the endpoint handler
+        # PII redaction in logs happens via the logging extra fields
+        
+        # Redact PII from log data
+        redacted_request_data = self._redact_log_data(request_log_data)
         
         # Log request
         logger.info(
             "Incoming request",
-            extra={
-                "method": request.method,
-                "path": request.url.path,
-                "query_params": str(request.query_params),
-                "client_ip": request.client.host if request.client else "unknown",
-                "user_agent": request.headers.get("user-agent", "unknown")
-            }
+            extra=redacted_request_data
         )
         
         try:
             response = await call_next(request)
             process_time = time.time() - start_time
             
+            # Prepare response log data
+            response_log_data = {
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "process_time_seconds": round(process_time, 4)
+            }
+            
+            # Redact PII from response log data
+            redacted_response_data = self._redact_log_data(response_log_data)
+            
             # Log successful response
             logger.info(
                 "Request completed",
-                extra={
-                    "method": request.method,
-                    "path": request.url.path,
-                    "status_code": response.status_code,
-                    "process_time_seconds": round(process_time, 4)
-                }
+                extra=redacted_response_data
             )
             
             # Add process time header
@@ -108,22 +136,39 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             
         except Exception as e:
             process_time = time.time() - start_time
+            
+            # Prepare error log data
+            error_log_data = {
+                "method": request.method,
+                "path": request.url.path,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "process_time_seconds": round(process_time, 4)
+            }
+            
+            # Redact PII from error log data
+            redacted_error_data = self._redact_log_data(error_log_data)
+            
             logger.error(
                 "Request failed",
-                extra={
-                    "method": request.method,
-                    "path": request.url.path,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "process_time_seconds": round(process_time, 4)
-                },
+                extra=redacted_error_data,
                 exc_info=True
             )
             raise
 
 
 class ErrorHandlingMiddleware(BaseHTTPMiddleware):
-    """Middleware for handling and formatting errors."""
+    """Middleware for handling and formatting errors with PII redaction."""
+    
+    def __init__(self, app):
+        super().__init__(app)
+        self.redactor = get_redactor() if settings.enable_pii_redaction and settings.redact_in_logs else None
+    
+    def _redact_log_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Redact PII from log data if enabled."""
+        if self.redactor and settings.redact_in_logs:
+            return self.redactor.redact_dict(data, recursive=True)
+        return data
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Handle errors and format responses."""
@@ -131,14 +176,20 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             return response
         except Exception as e:
+            # Prepare error log data
+            error_log_data = {
+                "path": request.url.path,
+                "method": request.method,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+            
+            # Redact PII from error log data
+            redacted_error_data = self._redact_log_data(error_log_data)
+            
             logger.error(
                 "Unhandled exception",
-                extra={
-                    "path": request.url.path,
-                    "method": request.method,
-                    "error": str(e),
-                    "error_type": type(e).__name__
-                },
+                extra=redacted_error_data,
                 exc_info=True
             )
             
@@ -157,3 +208,33 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                         "error_type": type(e).__name__
                     }
                 )
+
+
+class PIIRedactionMiddleware(BaseHTTPMiddleware):
+    """Middleware for redacting PII from API responses (optional).
+    
+    WARNING: This is disabled by default (redact_in_responses=False).
+    Redacting responses may break API contracts. Typically, PII redaction
+    should only be applied to logs, not responses.
+    
+    If you need response redaction, implement it at the endpoint level
+    rather than via middleware to maintain API contract integrity.
+    """
+    
+    def __init__(self, app):
+        super().__init__(app)
+        # Response redaction is typically not recommended
+        # This middleware is a placeholder for future implementation if needed
+        self.enabled = settings.enable_pii_redaction and settings.redact_in_responses
+        if self.enabled:
+            logger.warning(
+                "PII response redaction is enabled. This may break API contracts. "
+                "Consider redacting only in logs instead."
+            )
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Pass through response (redaction handled at endpoint level if needed)."""
+        # Response redaction is complex and may break API contracts
+        # For now, we pass through. If needed, implement at endpoint level.
+        response = await call_next(request)
+        return response

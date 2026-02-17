@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, Brain, BarChart3, Zap, AlertCircle, CheckCircle, XCircle, 
   FileText, Shield, X, GitBranch, Activity, Home, Settings, 
-  Users, Target, Clock, Award, ArrowRight, Menu, X as XIcon, KeyRound, LogOut, User as UserIcon, Database, List, FileCheck, FlaskConical, RefreshCw
+  Users, Target, Clock, Award, ArrowRight, Menu, X as XIcon, KeyRound, LogOut, User as UserIcon, 
+  Database, List, FileCheck, FlaskConical, RefreshCw, Sparkles, TrendingDown, DollarSign,
+  LineChart, PieChart, AlertTriangle, Bell, Eye, Lock, Globe, Server, Cpu, HardDrive,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -31,6 +34,7 @@ import ABTesting from '../components/ABTesting';
 import ModelRetraining from '../components/ModelRetraining';
 import BatchPredictions from '../components/BatchPredictions';
 import LoadTesting from '../components/LoadTesting';
+import ModelPerformanceValidation from '../components/ModelPerformanceValidation';
 import { creditScoringAPI } from '../utils/api';
 
 const Dashboard = () => {
@@ -45,13 +49,110 @@ const Dashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [performanceData, setPerformanceData] = useState(null);
   const [featureStoreStats, setFeatureStoreStats] = useState(null);
+  const [kpiData, setKpiData] = useState(null);
+  const [recentPredictions, setRecentPredictions] = useState([]);
+  const [expandedCategories, setExpandedCategories] = useState({
+    core: false,
+    analytics: false,
+    mlops: false,
+    monitoring: false,
+    governance: false,
+  });
+
+  // Organized menu items by category
+  const menuCategories = [
+    {
+      id: 'core',
+      label: 'Core Operations',
+      items: [
+        { id: 'overview', label: 'Overview', icon: Home },
+        { id: 'predict', label: 'Risk Assessment', icon: Brain },
+        { id: 'score-customer', label: 'Score Customer', icon: Target },
+        { id: 'data', label: 'Data Upload', icon: Database },
+        { id: 'transactions', label: 'Transactions', icon: List },
+      ]
+    },
+    {
+      id: 'analytics',
+      label: 'Analytics & Insights',
+      items: [
+        { id: 'predictions', label: 'Predictions', icon: FileText },
+        { id: 'scores', label: 'Customer Scores', icon: Award },
+        { id: 'kpis', label: 'Business KPIs', icon: BarChart3 },
+        { id: 'feature-store', label: 'Feature Store', icon: Database },
+      ]
+    },
+    {
+      id: 'mlops',
+      label: 'ML Operations',
+      items: [
+        { id: 'ab-testing', label: 'A/B Testing', icon: FlaskConical },
+        { id: 'retraining', label: 'Model Retraining', icon: RefreshCw },
+        { id: 'batch-predictions', label: 'Batch Predictions', icon: FileText },
+        { id: 'versions', label: 'Versions', icon: GitBranch },
+      ]
+    },
+    {
+      id: 'monitoring',
+      label: 'Monitoring & Quality',
+      items: [
+        { id: 'drift', label: 'Drift Detection', icon: TrendingUp },
+        { id: 'alerts', label: 'Alerts', icon: Bell },
+        { id: 'data-quality', label: 'Data Quality', icon: FileCheck },
+        { id: 'performance', label: 'Performance', icon: Activity },
+        { id: 'model-validation', label: 'Model Validation', icon: BarChart3 },
+      ]
+    },
+    {
+      id: 'governance',
+      label: 'Governance & Admin',
+      items: [
+        { id: 'governance', label: 'Governance', icon: Shield },
+        { id: 'lineage', label: 'Data Lineage', icon: GitBranch },
+        { id: 'users', label: 'Users', icon: Users },
+        { id: 'roles', label: 'Roles & Permissions', icon: KeyRound },
+        { id: 'load-testing', label: 'Load Testing', icon: Zap },
+      ]
+    },
+  ];
 
   useEffect(() => {
     loadFeatureNames();
     checkApiHealth();
     loadPerformanceData();
     loadFeatureStoreStats();
+    loadKPIData();
+    loadRecentPredictions();
+    
+    // Refresh data every 30 seconds
+    const interval = setInterval(() => {
+      checkApiHealth();
+      loadPerformanceData();
+      loadFeatureStoreStats();
+      loadKPIData();
+      loadRecentPredictions();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
+
+  // Auto-expand category containing active tab
+  useEffect(() => {
+    const activeCategory = menuCategories.find(cat => 
+      cat.items.some(item => item.id === activeTab)
+    );
+    if (activeCategory) {
+      setExpandedCategories(prev => {
+        if (!prev[activeCategory.id]) {
+          return {
+            ...prev,
+            [activeCategory.id]: true
+          };
+        }
+        return prev;
+      });
+    }
+  }, [activeTab]);
 
   const loadFeatureNames = async () => {
     try {
@@ -102,6 +203,24 @@ const Dashboard = () => {
     }
   };
 
+  const loadKPIData = async () => {
+    try {
+      const data = await creditScoringAPI.getLatestKPIs('daily');
+      setKpiData(data);
+    } catch (error) {
+      console.error('Failed to load KPI data:', error);
+    }
+  };
+
+  const loadRecentPredictions = async () => {
+    try {
+      const data = await creditScoringAPI.getPredictions(null, 5, 0);
+      setRecentPredictions(data.predictions || []);
+    } catch (error) {
+      console.error('Failed to load recent predictions:', error);
+    }
+  };
+
   const loadSampleData = () => {
     const sampleFeatures = [
       0.0, -0.046, -0.072, -0.349, -0.045, -2.156, -0.101, 0.849, -0.994,
@@ -127,7 +246,8 @@ const Dashboard = () => {
       }
       setActiveTab('predict');
       setResultTab('result');
-      loadPerformanceData(); // Refresh performance data
+      loadPerformanceData();
+      loadRecentPredictions();
     } catch (error) {
       alert('Prediction failed: ' + (error.response?.data?.detail || error.message));
     } finally {
@@ -161,35 +281,11 @@ const Dashboard = () => {
     }
   };
 
-  const menuItems = [
-    { id: 'overview', label: 'Overview', icon: Home },
-    { id: 'data', label: 'Data Upload', icon: Database },
-    { id: 'transactions', label: 'Transactions', icon: List },
-    { id: 'predict', label: 'Risk Assessment', icon: Brain },
-    { id: 'predictions', label: 'Predictions', icon: FileText },
-    { id: 'scores', label: 'Customer Scores', icon: Award },
-    { id: 'score-customer', label: 'Score Customer', icon: Award },
-    { id: 'feature-store', label: 'Feature Store', icon: Database },
-    { id: 'ab-testing', label: 'A/B Testing', icon: FlaskConical },
-    { id: 'retraining', label: 'Model Retraining', icon: RefreshCw },
-    { id: 'batch-predictions', label: 'Batch Predictions', icon: FileText },
-    { id: 'load-testing', label: 'Load Testing', icon: Zap },
-    { id: 'kpis', label: 'Business KPIs', icon: BarChart3 },
-    { id: 'drift', label: 'Drift Detection', icon: TrendingUp },
-    { id: 'alerts', label: 'Alerts', icon: AlertCircle },
-    { id: 'data-quality', label: 'Data Quality', icon: FileCheck },
-    { id: 'users', label: 'Users', icon: Users },
-    { id: 'roles', label: 'Roles & Permissions', icon: KeyRound },
-    { id: 'performance', label: 'Performance', icon: Activity },
-    { id: 'governance', label: 'Governance', icon: Shield },
-    { id: 'versions', label: 'Versions', icon: GitBranch },
-    { id: 'lineage', label: 'Data Lineage', icon: GitBranch },
-  ];
-
   const stats = performanceData?.stats?.all || {};
   const p95Latency = stats.p95 || 0;
   const totalRequests = stats.count || 0;
   const errorRate = performanceData?.stats?.error_rate?.rate || 0;
+  const avgLatency = stats.avg || 0;
 
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -199,11 +295,24 @@ const Dashboard = () => {
     navigate('/login');
   };
 
+  const toggleCategory = (categoryId) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [categoryId]: !prev[categoryId]
+    }));
+  };
+
+  // Calculate additional metrics
+  const approvalRate = kpiData?.approval_rate || 0;
+  const rejectionRate = kpiData?.rejection_rate || 0;
+  const totalRevenue = kpiData?.total_revenue || 0;
+  const totalPredictions = kpiData?.total_predictions || totalRequests;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       {/* Top Navigation Bar */}
-      <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50">
-        <div className="px-6 py-4">
+      <header className="bg-white/80 backdrop-blur-lg border-b border-slate-200/50 shadow-sm sticky top-0 z-50">
+        <div className="px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
@@ -213,17 +322,19 @@ const Dashboard = () => {
                 <Menu className="w-6 h-6 text-slate-600" />
               </button>
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg">
-                  <TrendingUp className="w-6 h-6 text-white" />
+                <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg">
+                  <Sparkles className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-slate-800">Credit Risk Scoring</h1>
-                  <p className="text-xs text-slate-500">ML-Powered Decision Platform</p>
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                    Credit Risk Scoring
+                  </h1>
+                  <p className="text-xs text-slate-500">AI-Powered Decision Platform</p>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-lg">
+              <div className="hidden md:flex items-center gap-2 bg-gradient-to-r from-slate-50 to-blue-50 px-4 py-2 rounded-lg border border-slate-200">
                 {getStatusIcon()}
                 <span className="text-sm font-medium text-slate-700">
                   {apiStatus === 'healthy' ? 'System Online' : 
@@ -233,11 +344,11 @@ const Dashboard = () => {
               {user && (
                 <div className="flex items-center gap-3">
                   <div className="text-right hidden sm:block">
-                    <div className="text-sm font-medium text-slate-800">{user.full_name || user.username}</div>
+                    <div className="text-sm font-semibold text-slate-800">{user.full_name || user.username}</div>
                     <div className="text-xs text-slate-500">{user.department || 'User'}</div>
                   </div>
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <UserIcon className="w-5 h-5 text-blue-600" />
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center shadow-md">
+                    <UserIcon className="w-5 h-5 text-white" />
                   </div>
                   <button
                     onClick={handleLogout}
@@ -255,27 +366,58 @@ const Dashboard = () => {
       </header>
 
       <div className="flex">
-        {/* Sidebar Navigation */}
+        {/* Enhanced Sidebar Navigation */}
         <aside className={`
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
           fixed lg:static lg:translate-x-0
-          w-64 bg-white border-r border-slate-200 h-[calc(100vh-73px)]
+          w-72 bg-white/95 backdrop-blur-lg border-r border-slate-200/50 h-[calc(100vh-73px)]
           transition-transform duration-300 z-40
-          overflow-y-auto
+          overflow-y-auto shadow-lg lg:shadow-none
         `}>
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-6 lg:hidden">
-              <h2 className="text-lg font-bold text-slate-800">Menu</h2>
+          <div className="px-4 py-6">
+              <div className="flex items-center justify-between mb-8 lg:hidden">
+              <h2 className="text-lg font-bold text-slate-800">Navigation</h2>
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-lg"
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
               >
                 <XIcon className="w-5 h-5 text-slate-600" />
               </button>
             </div>
-            <nav className="space-y-1">
-              {menuItems.map((item) => {
+            <nav className="space-y-5">
+              {menuCategories.map((category) => {
+                const isExpanded = expandedCategories[category.id];
+                const hasActiveItem = category.items.some(item => activeTab === item.id);
+                
+                return (
+                  <div key={category.id}>
+                    <button
+                      onClick={() => toggleCategory(category.id)}
+                      className={`
+                        w-full flex items-center justify-between px-4 py-2.5 mb-3 rounded-lg
+                        transition-all duration-200 group
+                        ${hasActiveItem 
+                          ? 'bg-blue-50 text-blue-700' 
+                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                        }
+                      `}
+                    >
+                      <h3 className="text-xs font-bold uppercase tracking-wider">
+                        {category.label}
+                      </h3>
+                      {isExpanded ? (
+                        <ChevronUp className={`w-4 h-4 transition-transform ${hasActiveItem ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                      ) : (
+                        <ChevronDown className={`w-4 h-4 transition-transform ${hasActiveItem ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                      )}
+                    </button>
+                    <div className={`
+                      space-y-1 overflow-hidden transition-all duration-300 ease-in-out
+                      ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}
+                    `}>
+                      {category.items.map((item) => {
                 const Icon = item.icon;
+                        const isActive = activeTab === item.id;
                 return (
                   <button
                     key={item.id}
@@ -284,20 +426,24 @@ const Dashboard = () => {
                       if (window.innerWidth < 1024) setSidebarOpen(false);
                     }}
                     className={`
-                      w-full flex items-center gap-3 px-4 py-3 rounded-lg
-                      transition-all duration-200 text-left
-                      ${activeTab === item.id
-                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
-                        : 'text-slate-700 hover:bg-slate-100'
+                              w-full flex items-center gap-3 px-4 py-2.5 rounded-xl
+                              transition-all duration-200 text-left group
+                              ${isActive
+                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30'
+                                : 'text-slate-700 hover:bg-slate-100 hover:shadow-md'
                       }
                     `}
                   >
-                    <Icon className="w-5 h-5" />
-                    <span className="font-medium">{item.label}</span>
-                    {activeTab === item.id && (
-                      <ArrowRight className="w-4 h-4 ml-auto" />
+                            <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-blue-600'}`} />
+                            <span className="font-medium flex-1">{item.label}</span>
+                            {isActive && (
+                              <div className="w-2 h-2 bg-white rounded-full"></div>
                     )}
                   </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
             </nav>
@@ -307,175 +453,328 @@ const Dashboard = () => {
         {/* Overlay for mobile */}
         {sidebarOpen && (
           <div
-            className="lg:hidden fixed inset-0 bg-black/20 z-30"
+            className="lg:hidden fixed inset-0 bg-black/20 z-30 backdrop-blur-sm"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
         {/* Main Content */}
-        <main className="flex-1 p-6 lg:p-8">
-          {/* Overview Section */}
+        <main className="flex-1 px-4 sm:px-6 lg:px-10 xl:px-12 py-6 lg:py-8 max-w-7xl mx-auto w-full">
+          {/* Enhanced Overview Section */}
           {activeTab === 'overview' && (
-            <div className="space-y-6">
-              {/* Hero Section with KPIs */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                <div className="card bg-gradient-to-br from-blue-600 to-indigo-600 text-white">
+            <div className="space-y-8">
+              {/* Hero Stats Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                {/* Total Predictions */}
+                <div className="card bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 text-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
+                  <div className="relative z-10">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-white/20 rounded-lg">
+                      <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
                       <Target className="w-6 h-6" />
                     </div>
-                    <span className="text-sm opacity-90">Total Requests</span>
+                      <TrendingUp className="w-5 h-5 opacity-80" />
                   </div>
-                  <div className="text-3xl font-bold mb-1">{totalRequests.toLocaleString()}</div>
-                  <div className="text-sm opacity-75">Predictions processed</div>
+                    <div className="text-4xl font-bold mb-1">{totalPredictions.toLocaleString()}</div>
+                    <div className="text-sm opacity-90">Total Predictions</div>
+                    <div className="mt-2 text-xs opacity-75">All time processed</div>
+                  </div>
                 </div>
 
-                <div className="card bg-gradient-to-br from-green-500 to-emerald-500 text-white">
+                {/* P95 Latency */}
+                <div className="card bg-gradient-to-br from-emerald-500 via-green-500 to-teal-600 text-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
+                  <div className="relative z-10">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-white/20 rounded-lg">
-                      <Clock className="w-6 h-6" />
+                      <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
+                        <Zap className="w-6 h-6" />
                     </div>
-                    <span className="text-sm opacity-90">P95 Latency</span>
+                      {p95Latency > 0 && p95Latency < 200 ? (
+                        <CheckCircle className="w-5 h-5 opacity-80" />
+                      ) : (
+                        <Clock className="w-5 h-5 opacity-80" />
+                      )}
                   </div>
-                  <div className="text-3xl font-bold mb-1">
-                    {p95Latency > 0 ? `${p95Latency.toFixed(1)}ms` : 'N/A'}
+                    <div className="text-4xl font-bold mb-1">
+                      {p95Latency > 0 ? `${p95Latency.toFixed(0)}ms` : 'N/A'}
                   </div>
-                  <div className="text-sm opacity-75">
+                    <div className="text-sm opacity-90">P95 Latency</div>
+                    <div className="mt-2 text-xs opacity-75">
                     {p95Latency > 0 && p95Latency < 200 ? '✓ SLA Compliant' : 'No data yet'}
+                    </div>
                   </div>
                 </div>
 
-                <div className="card bg-gradient-to-br from-purple-500 to-pink-500 text-white">
+                {/* Approval Rate */}
+                <div className="card bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 text-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
+                  <div className="relative z-10">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-white/20 rounded-lg">
-                      <Award className="w-6 h-6" />
+                      <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
+                        <CheckCircle className="w-6 h-6" />
                     </div>
-                    <span className="text-sm opacity-90">Error Rate</span>
+                      <TrendingUp className="w-5 h-5 opacity-80" />
                   </div>
-                  <div className="text-3xl font-bold mb-1">
-                    {(errorRate * 100).toFixed(2)}%
+                    <div className="text-4xl font-bold mb-1">
+                      {(approvalRate * 100).toFixed(1)}%
                   </div>
-                  <div className="text-sm opacity-75">System reliability</div>
+                    <div className="text-sm opacity-90">Approval Rate</div>
+                    <div className="mt-2 text-xs opacity-75">Auto-approved applications</div>
+                  </div>
                 </div>
 
-                <div className="card bg-gradient-to-br from-amber-500 to-orange-500 text-white">
+                {/* System Status */}
+                <div className="card bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 text-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
+                  <div className="relative z-10">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-white/20 rounded-lg">
-                      <Users className="w-6 h-6" />
+                      <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
+                        <Server className="w-6 h-6" />
                     </div>
-                    <span className="text-sm opacity-90">Model Status</span>
+                      {getStatusIcon()}
                   </div>
-                  <div className="text-3xl font-bold mb-1">
-                    {apiStatus === 'healthy' ? 'Active' : 'Degraded'}
+                    <div className="text-4xl font-bold mb-1">
+                      {apiStatus === 'healthy' ? 'Active' : apiStatus === 'degraded' ? 'Degraded' : 'Offline'}
                   </div>
-                  <div className="text-sm opacity-75">Production ready</div>
+                    <div className="text-sm opacity-90">System Status</div>
+                    <div className="mt-2 text-xs opacity-75">Production ready</div>
+                  </div>
+                </div>
                 </div>
 
-                <div className="card bg-gradient-to-br from-cyan-500 to-teal-500 text-white">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-white/20 rounded-lg">
-                      <Database className="w-6 h-6" />
+              {/* Secondary Metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="card bg-white border-2 border-slate-200 hover:border-blue-300 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <DollarSign className="w-5 h-5 text-blue-600" />
                     </div>
-                    <span className="text-sm opacity-90">Feature Store</span>
+                    <span className="text-xs font-semibold text-slate-500">Revenue Impact</span>
                   </div>
-                  <div className="text-3xl font-bold mb-1">
+                  <div className="text-2xl font-bold text-slate-800 mb-1">
+                    ${(totalRevenue / 1000).toFixed(1)}K
+                  </div>
+                  <div className="text-xs text-slate-600">From approved applications</div>
+                </div>
+
+                <div className="card bg-white border-2 border-slate-200 hover:border-red-300 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2 bg-red-100 rounded-lg">
+                      <XCircle className="w-5 h-5 text-red-600" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500">Rejection Rate</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-800 mb-1">
+                    {(rejectionRate * 100).toFixed(1)}%
+                  </div>
+                  <div className="text-xs text-slate-600">Auto-rejected applications</div>
+                </div>
+
+                <div className="card bg-white border-2 border-slate-200 hover:border-green-300 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2 bg-green-100 rounded-lg">
+                      <Activity className="w-5 h-5 text-green-600" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500">Avg Latency</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-800 mb-1">
+                    {avgLatency > 0 ? `${avgLatency.toFixed(0)}ms` : 'N/A'}
+                  </div>
+                  <div className="text-xs text-slate-600">Average response time</div>
+                </div>
+
+                <div className="card bg-white border-2 border-slate-200 hover:border-purple-300 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Database className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500">Feature Store</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-800 mb-1">
                     {featureStoreStats?.total_features?.toLocaleString() || 0}
                   </div>
-                  <div className="text-sm opacity-75">
+                  <div className="text-xs text-slate-600">
                     {featureStoreStats?.cache_coverage 
-                      ? `${featureStoreStats.cache_coverage.toFixed(1)}% coverage`
+                      ? `${featureStoreStats.cache_coverage.toFixed(0)}% cached`
                       : 'Cached features'}
                   </div>
                 </div>
               </div>
 
-              {/* Welcome Section */}
-              <div className="card bg-gradient-to-br from-white to-blue-50 border-2 border-blue-200">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              {/* Welcome Section with Quick Actions */}
+              <div className="card bg-gradient-to-br from-white via-blue-50 to-indigo-50 border-2 border-blue-200/50 shadow-xl">
+                <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
                   <div className="flex-1">
-                    <h2 className="text-3xl font-bold text-slate-800 mb-3">
-                      Welcome to Credit Risk Scoring Platform
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg">
+                        <Sparkles className="w-6 h-6 text-white" />
+                      </div>
+                      <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                        Welcome to Credit Risk Platform
                     </h2>
-                    <p className="text-slate-600 text-lg mb-4">
+                    </div>
+                    <p className="text-slate-700 text-lg mb-4 leading-relaxed">
                       AI-powered credit risk assessment for real-time lending decisions. 
                       Built with industry-leading ML models and regulatory compliance.
                     </p>
                     <div className="flex flex-wrap gap-3">
-                      <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-full text-sm text-green-700 font-medium">
+                        <CheckCircle className="w-4 h-4" />
                         <span>Basel II Compliant</span>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 rounded-full text-sm text-blue-700 font-medium">
+                        <Zap className="w-4 h-4" />
                         <span>Sub-200ms Latency</span>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-100 rounded-full text-sm text-purple-700 font-medium">
+                        <Brain className="w-4 h-4" />
                         <span>SHAP Explanations</span>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-pink-100 rounded-full text-sm text-pink-700 font-medium">
+                        <Shield className="w-4 h-4" />
                         <span>Fairness Monitoring</span>
                       </div>
                     </div>
                   </div>
+                  <div className="flex flex-col gap-3">
                   <button
                     onClick={() => setActiveTab('predict')}
-                    className="btn-primary flex items-center gap-2 px-8 py-4 text-lg"
+                      className="btn-primary flex items-center justify-center gap-2 px-8 py-4 text-lg shadow-xl hover:shadow-2xl"
                   >
+                      <Brain className="w-5 h-5" />
                     Start Assessment
                     <ArrowRight className="w-5 h-5" />
                   </button>
+                    <button
+                      onClick={() => setActiveTab('kpis')}
+                      className="btn-secondary flex items-center justify-center gap-2 px-8 py-4 text-lg"
+                    >
+                      <BarChart3 className="w-5 h-5" />
+                      View Analytics
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Quick Actions */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="card hover:shadow-xl transition-all cursor-pointer" onClick={() => setActiveTab('predict')}>
+              {/* Quick Actions Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div 
+                  className="card hover:shadow-2xl transition-all cursor-pointer group border-2 border-transparent hover:border-blue-300"
+                  onClick={() => setActiveTab('predict')}
+                >
                   <div className="flex items-center gap-4">
-                    <div className="p-4 bg-blue-100 rounded-lg">
-                      <Brain className="w-8 h-8 text-blue-600" />
+                    <div className="p-4 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl group-hover:scale-110 transition-transform">
+                      <Brain className="w-8 h-8 text-white" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-slate-800">Risk Assessment</h3>
+                      <h3 className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">Risk Assessment</h3>
                       <p className="text-sm text-slate-600">Evaluate customer credit risk</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="card hover:shadow-xl transition-all cursor-pointer" onClick={() => setActiveTab('performance')}>
+                <div 
+                  className="card hover:shadow-2xl transition-all cursor-pointer group border-2 border-transparent hover:border-green-300"
+                  onClick={() => setActiveTab('performance')}
+                >
                   <div className="flex items-center gap-4">
-                    <div className="p-4 bg-green-100 rounded-lg">
-                      <Activity className="w-8 h-8 text-green-600" />
+                    <div className="p-4 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl group-hover:scale-110 transition-transform">
+                      <Activity className="w-8 h-8 text-white" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-slate-800">Performance</h3>
+                      <h3 className="font-bold text-slate-800 group-hover:text-green-600 transition-colors">Performance</h3>
                       <p className="text-sm text-slate-600">Monitor system metrics</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="card hover:shadow-xl transition-all cursor-pointer" onClick={() => setActiveTab('governance')}>
+                <div 
+                  className="card hover:shadow-2xl transition-all cursor-pointer group border-2 border-transparent hover:border-purple-300"
+                  onClick={() => setActiveTab('governance')}
+                >
                   <div className="flex items-center gap-4">
-                    <div className="p-4 bg-purple-100 rounded-lg">
-                      <Shield className="w-8 h-8 text-purple-600" />
+                    <div className="p-4 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl group-hover:scale-110 transition-transform">
+                      <Shield className="w-8 h-8 text-white" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-slate-800">Governance</h3>
+                      <h3 className="font-bold text-slate-800 group-hover:text-purple-600 transition-colors">Governance</h3>
                       <p className="text-sm text-slate-600">Model compliance & fairness</p>
                     </div>
                   </div>
                 </div>
+
+                <div 
+                  className="card hover:shadow-2xl transition-all cursor-pointer group border-2 border-transparent hover:border-amber-300"
+                  onClick={() => setActiveTab('kpis')}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-4 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl group-hover:scale-110 transition-transform">
+                      <BarChart3 className="w-8 h-8 text-white" />
               </div>
+                    <div>
+                      <h3 className="font-bold text-slate-800 group-hover:text-amber-600 transition-colors">Business KPIs</h3>
+                      <p className="text-sm text-slate-600">Revenue & analytics</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Activity */}
+              {recentPredictions.length > 0 && (
+                <div className="card">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-blue-600" />
+                      Recent Activity
+                    </h3>
+                    <button
+                      onClick={() => setActiveTab('predictions')}
+                      className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                    >
+                      View All
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {recentPredictions.slice(0, 5).map((pred, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${
+                            pred.risk_level === 'low' ? 'bg-green-500' :
+                            pred.risk_level === 'medium' ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}></div>
+                          <div>
+                            <div className="font-medium text-slate-800">
+                              {pred.customer_id || 'Unknown Customer'}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {pred.predicted_at ? new Date(pred.predicted_at).toLocaleString() : 'Just now'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-bold ${
+                            pred.risk_level === 'low' ? 'text-green-600' :
+                            pred.risk_level === 'medium' ? 'text-yellow-600' : 'text-red-600'
+                          }`}>
+                            {(pred.risk_score * 100).toFixed(1)}%
+                          </div>
+                          <div className="text-xs text-slate-500 capitalize">{pred.risk_level || 'Unknown'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Data Upload Section */}
+          {/* All other sections remain the same but with enhanced headers */}
           {activeTab === 'data' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Data Upload</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Data Upload</h2>
                   <p className="text-slate-600 mt-1">Upload raw transaction data to the database</p>
                 </div>
               </div>
@@ -483,12 +782,11 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Transactions View Section */}
           {activeTab === 'transactions' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Transaction Data</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Transaction Data</h2>
                   <p className="text-slate-600 mt-1">View and filter uploaded transaction data from the database</p>
                 </div>
               </div>
@@ -496,18 +794,16 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Risk Assessment Section */}
           {activeTab === 'predict' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Risk Assessment</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Risk Assessment</h2>
                   <p className="text-slate-600 mt-1">Evaluate customer credit risk in real-time</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left Column - Feature Input */}
                 <div className="lg:col-span-1">
                   <div className="card sticky top-24">
                     <div className="flex items-center gap-2 mb-6">
@@ -562,9 +858,7 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* Right Column - Results */}
                 <div className="lg:col-span-2 space-y-6">
-                  {/* Tab Navigation */}
                   {prediction && (
                     <div className="card">
                       <div className="flex gap-2 border-b border-slate-200">
@@ -604,17 +898,14 @@ const Dashboard = () => {
                     </div>
                   )}
 
-                  {/* Prediction Result */}
                   {resultTab === 'result' && prediction && (
                     <PredictionResult prediction={prediction} />
                   )}
 
-                  {/* Explanation */}
                   {resultTab === 'explanation' && explanation && (
                     <ExplanationPanel explanation={explanation} />
                   )}
 
-                  {/* Scenario Tester */}
                   {resultTab === 'scenario' && prediction && explanation && (
                     <ScenarioTester
                       initialFeatures={features}
@@ -623,7 +914,6 @@ const Dashboard = () => {
                     />
                   )}
 
-                  {/* Empty State */}
                   {!prediction && (
                     <div className="card text-center py-16">
                       <BarChart3 className="w-16 h-16 text-slate-300 mx-auto mb-4" />
@@ -640,12 +930,12 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Performance Section */}
+          {/* All other sections with enhanced headers */}
           {activeTab === 'performance' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Performance Monitor</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Performance Monitor</h2>
                   <p className="text-slate-600 mt-1">Real-time system metrics and SLA compliance</p>
                 </div>
               </div>
@@ -653,12 +943,23 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Governance Section */}
-          {activeTab === 'governance' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+          {activeTab === 'model-validation' && (
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Model Governance</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Model Performance & Validation</h2>
+                  <p className="text-slate-600 mt-1">Statistical rigor, proper evaluation, and production readiness</p>
+                </div>
+              </div>
+              <ModelPerformanceValidation />
+            </div>
+          )}
+
+          {activeTab === 'governance' && (
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Model Governance</h2>
                   <p className="text-slate-600 mt-1">Compliance, fairness, and regulatory oversight</p>
                 </div>
               </div>
@@ -669,12 +970,11 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Predictions Section */}
           {activeTab === 'predictions' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Predictions History</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Predictions History</h2>
                   <p className="text-slate-600 mt-1">View all predictions stored in the database</p>
                 </div>
               </div>
@@ -682,26 +982,23 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Customer Scores Section */}
           {activeTab === 'scores' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <CustomerScoresTable />
             </div>
           )}
 
-          {/* Score Customer Section */}
           {activeTab === 'score-customer' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <CustomerScorer />
             </div>
           )}
 
-          {/* Business KPIs Section */}
           {activeTab === 'kpis' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Business KPIs</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Business KPIs</h2>
                   <p className="text-slate-600 mt-1">Key performance indicators and analytics</p>
                 </div>
               </div>
@@ -709,12 +1006,11 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Users Section */}
           {activeTab === 'users' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Users Management</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Users Management</h2>
                   <p className="text-slate-600 mt-1">Manage system users and their access</p>
                 </div>
               </div>
@@ -722,12 +1018,11 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Roles Section */}
           {activeTab === 'roles' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Roles & Permissions</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Roles & Permissions</h2>
                   <p className="text-slate-600 mt-1">Manage roles and their permissions</p>
                 </div>
               </div>
@@ -735,12 +1030,11 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Versions Section */}
           {activeTab === 'versions' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-6">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-800">Version Information</h2>
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Version Information</h2>
                   <p className="text-slate-600 mt-1">Model and data version tracking</p>
                 </div>
               </div>
@@ -748,65 +1042,56 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Drift Detection Section */}
           {activeTab === 'drift' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <DriftDetection />
             </div>
           )}
 
-          {/* Alerts Section */}
           {activeTab === 'alerts' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <AlertsPanel />
             </div>
           )}
 
-          {/* Data Lineage Section */}
           {activeTab === 'lineage' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <DataLineage />
             </div>
           )}
 
-          {/* Data Quality Section */}
           {activeTab === 'data-quality' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <DataQualityMonitor />
             </div>
           )}
 
-          {/* Feature Store Section */}
           {activeTab === 'feature-store' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <FeatureStore />
             </div>
           )}
 
-          {/* A/B Testing Section */}
           {activeTab === 'ab-testing' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <ABTesting />
             </div>
           )}
 
-          {/* Model Retraining Section */}
           {activeTab === 'retraining' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <ModelRetraining />
             </div>
           )}
 
-          {/* Batch Predictions Section */}
           {activeTab === 'batch-predictions' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <BatchPredictions />
             </div>
           )}
 
-          {/* Load Testing Section */}
           {activeTab === 'load-testing' && (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <LoadTesting />
             </div>
           )}

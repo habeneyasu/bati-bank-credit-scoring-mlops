@@ -150,14 +150,24 @@ class PredictionService:
     def get_customer_predictions(
         self,
         customer_id: str,
-        limit: Optional[int] = 100
+        limit: Optional[int] = 100,
+        offset: Optional[int] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        risk_level: Optional[str] = None,
+        model_version: Optional[str] = None
     ) -> List[Prediction]:
         """
-        Get all predictions for a customer.
+        Get all predictions for a customer with filtering.
         
         Args:
             customer_id: Customer identifier
             limit: Maximum number of predictions to return
+            offset: Number of predictions to skip
+            start_date: Filter predictions from this date (inclusive)
+            end_date: Filter predictions to this date (inclusive)
+            risk_level: Filter by risk level ('low', 'medium', 'high')
+            model_version: Filter by model version
             
         Returns:
             List of predictions ordered by most recent first
@@ -166,7 +176,12 @@ class PredictionService:
             self.logger.debug(f"Getting predictions for customer: {customer_id}")
             predictions = self.repository.get_by_customer_id(
                 customer_id=customer_id,
-                limit=limit
+                limit=limit,
+                offset=offset,
+                start_date=start_date,
+                end_date=end_date,
+                risk_level=risk_level,
+                model_version=model_version
             )
             self.logger.debug(f"Found {len(predictions)} predictions for customer {customer_id}")
             return predictions
@@ -178,6 +193,157 @@ class PredictionService:
             )
             raise DatabaseError(
                 f"Failed to get customer predictions: {str(e)}",
+                original_error=e
+            )
+    
+    def get_recent_predictions(
+        self,
+        limit: int = 100
+    ) -> List[Prediction]:
+        """
+        Get recent predictions ordered by creation time.
+        
+        Args:
+            limit: Maximum number of predictions to return
+            
+        Returns:
+            List of recent predictions
+        """
+        try:
+            from sqlalchemy import desc
+            
+            predictions = self.session.query(Prediction).order_by(
+                desc(Prediction.created_at)
+            ).limit(limit).all()
+            
+            return predictions
+            
+        except SQLAlchemyError as e:
+            self.logger.error(f"Error getting recent predictions: {e}", exc_info=True)
+            raise DatabaseQueryError(
+                f"Error getting recent predictions: {str(e)}",
+                original_error=e
+            )
+    
+    def get_customer_prediction_analytics(
+        self,
+        customer_id: str,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> Dict[str, Any]:
+        """
+        Get analytics/aggregations for customer predictions.
+        
+        Args:
+            customer_id: Customer identifier
+            start_date: Filter predictions from this date (inclusive)
+            end_date: Filter predictions to this date (inclusive)
+            
+        Returns:
+            Dictionary with analytics data
+        """
+        try:
+            from sqlalchemy import func, case
+            
+            query = self.session.query(
+                func.count(Prediction.prediction_id).label('total_count'),
+                func.avg(Prediction.probability).label('avg_probability'),
+                func.avg(Prediction.customer_score).label('avg_score'),
+                func.avg(Prediction.latency_ms).label('avg_latency_ms'),
+                func.count(case((Prediction.risk_level == 'low', 1))).label('low_risk_count'),
+                func.count(case((Prediction.risk_level == 'medium', 1))).label('medium_risk_count'),
+                func.count(case((Prediction.risk_level == 'high', 1))).label('high_risk_count'),
+                func.min(Prediction.created_at).label('first_prediction'),
+                func.max(Prediction.created_at).label('last_prediction')
+            ).filter(
+                Prediction.customer_id_indexed == customer_id
+            )
+            
+            # Apply date filters
+            if start_date:
+                query = query.filter(Prediction.created_at_date >= start_date)
+            if end_date:
+                query = query.filter(Prediction.created_at_date <= end_date)
+            
+            result = query.first()
+            
+            if result and result.total_count > 0:
+                return {
+                    "total_count": result.total_count or 0,
+                    "average_probability": float(result.avg_probability) if result.avg_probability else None,
+                    "average_score": float(result.avg_score) if result.avg_score else None,
+                    "average_latency_ms": float(result.avg_latency_ms) if result.avg_latency_ms else None,
+                    "risk_level_distribution": {
+                        "low": result.low_risk_count or 0,
+                        "medium": result.medium_risk_count or 0,
+                        "high": result.high_risk_count or 0
+                    },
+                    "first_prediction": result.first_prediction.isoformat() if result.first_prediction else None,
+                    "last_prediction": result.last_prediction.isoformat() if result.last_prediction else None
+                }
+            else:
+                return {
+                    "total_count": 0,
+                    "average_probability": None,
+                    "average_score": None,
+                    "average_latency_ms": None,
+                    "risk_level_distribution": {
+                        "low": 0,
+                        "medium": 0,
+                        "high": 0
+                    },
+                    "first_prediction": None,
+                    "last_prediction": None
+                }
+                
+        except Exception as e:
+            self.logger.error(
+                f"Failed to get customer prediction analytics: {e}",
+                extra={"customer_id": customer_id},
+                exc_info=True
+            )
+            raise DatabaseError(
+                f"Failed to get customer prediction analytics: {str(e)}",
+                original_error=e
+            )
+    
+    def count_customer_predictions(
+        self,
+        customer_id: str,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        risk_level: Optional[str] = None,
+        model_version: Optional[str] = None
+    ) -> int:
+        """
+        Count predictions for a customer with filtering.
+        
+        Args:
+            customer_id: Customer identifier
+            start_date: Filter predictions from this date (inclusive)
+            end_date: Filter predictions to this date (inclusive)
+            risk_level: Filter by risk level
+            model_version: Filter by model version
+            
+        Returns:
+            Total count of matching predictions
+        """
+        try:
+            return self.repository.count_by_customer_id(
+                customer_id=customer_id,
+                start_date=start_date,
+                end_date=end_date,
+                risk_level=risk_level,
+                model_version=model_version
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to count customer predictions: {e}",
+                extra={"customer_id": customer_id},
+                exc_info=True
+            )
+            raise DatabaseError(
+                f"Failed to count customer predictions: {str(e)}",
                 original_error=e
             )
     

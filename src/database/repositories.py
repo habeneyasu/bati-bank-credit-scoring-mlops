@@ -419,17 +419,27 @@ class PredictionRepository(BaseRepository[Prediction]):
         self,
         customer_id: str,
         limit: Optional[int] = None,
+        offset: Optional[int] = None,
         order_by: str = "created_at",
-        descending: bool = True
+        descending: bool = True,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        risk_level: Optional[str] = None,
+        model_version: Optional[str] = None
     ) -> List[Prediction]:
         """
-        Get predictions by customer ID.
+        Get predictions by customer ID with filtering options.
         
         Args:
             customer_id: Customer identifier
             limit: Maximum number of records
+            offset: Number of records to skip
             order_by: Field to order by
             descending: Order descending if True
+            start_date: Filter predictions from this date (inclusive)
+            end_date: Filter predictions to this date (inclusive)
+            risk_level: Filter by risk level ('low', 'medium', 'high')
+            model_version: Filter by model version
             
         Returns:
             List of predictions
@@ -441,12 +451,26 @@ class PredictionRepository(BaseRepository[Prediction]):
                 Prediction.customer_id_indexed == customer_id
             )
             
+            # Apply filters
+            if start_date:
+                query = query.filter(Prediction.created_at_date >= start_date)
+            if end_date:
+                query = query.filter(Prediction.created_at_date <= end_date)
+            if risk_level:
+                query = query.filter(Prediction.risk_level == risk_level)
+            if model_version:
+                query = query.filter(Prediction.model_version == model_version)
+            
             # Order by
             order_field = getattr(Prediction, order_by, Prediction.created_at)
             if descending:
                 query = query.order_by(desc(order_field))
             else:
                 query = query.order_by(asc(order_field))
+            
+            # Offset
+            if offset:
+                query = query.offset(offset)
             
             # Limit
             if limit:
@@ -465,6 +489,55 @@ class PredictionRepository(BaseRepository[Prediction]):
             )
             raise DatabaseQueryError(
                 f"Error getting predictions: {str(e)}",
+                original_error=e
+            )
+    
+    def count_by_customer_id(
+        self,
+        customer_id: str,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        risk_level: Optional[str] = None,
+        model_version: Optional[str] = None
+    ) -> int:
+        """
+        Count predictions for a customer with filtering.
+        
+        Args:
+            customer_id: Customer identifier
+            start_date: Filter predictions from this date (inclusive)
+            end_date: Filter predictions to this date (inclusive)
+            risk_level: Filter by risk level
+            model_version: Filter by model version
+            
+        Returns:
+            Total count of matching predictions
+        """
+        try:
+            query = self.session.query(func.count(Prediction.prediction_id)).filter(
+                Prediction.customer_id_indexed == customer_id
+            )
+            
+            # Apply filters
+            if start_date:
+                query = query.filter(Prediction.created_at_date >= start_date)
+            if end_date:
+                query = query.filter(Prediction.created_at_date <= end_date)
+            if risk_level:
+                query = query.filter(Prediction.risk_level == risk_level)
+            if model_version:
+                query = query.filter(Prediction.model_version == model_version)
+            
+            return query.scalar() or 0
+            
+        except SQLAlchemyError as e:
+            self.logger.error(
+                f"Error counting predictions by customer ID: {e}",
+                extra={"customer_id": customer_id},
+                exc_info=True
+            )
+            raise DatabaseQueryError(
+                f"Error counting predictions: {str(e)}",
                 original_error=e
             )
     
@@ -657,6 +730,41 @@ class CustomerFeatureRepository(BaseRepository[CustomerFeature]):
     ) -> CustomerFeature:
         """Insert or update customer features in feature store."""
         try:
+            import numpy as np
+            
+            # Convert NumPy types to native Python types and clamp to DECIMAL(10,6) range
+            def convert_to_native(value):
+                """Convert NumPy/pandas types to native Python types and clamp to DECIMAL(10,6)."""
+                if value is None:
+                    return None
+                
+                # Convert to float first
+                if isinstance(value, (np.floating, np.float64, np.float32)):
+                    val = float(value)
+                elif isinstance(value, (np.integer, np.int64, np.int32)):
+                    val = float(int(value))
+                elif isinstance(value, (list, tuple)):
+                    return [convert_to_native(v) for v in value]
+                else:
+                    val = float(value) if isinstance(value, (int, float)) else value
+                
+                # Clamp to DECIMAL(10,6) range: -9999.999999 to 9999.999999
+                if isinstance(val, (int, float)):
+                    if np.isnan(val) or np.isinf(val):
+                        return 0.0
+                    return max(-9999.999999, min(9999.999999, float(val)))
+                return val
+            
+            # Convert feature_vector and all numeric parameters
+            feature_vector = [convert_to_native(v) for v in feature_vector]
+            recency_normalized = convert_to_native(recency_normalized)
+            frequency_normalized = convert_to_native(frequency_normalized)
+            monetary_normalized = convert_to_native(monetary_normalized)
+            transaction_hour = convert_to_native(transaction_hour)
+            transaction_day = convert_to_native(transaction_day)
+            transaction_month = convert_to_native(transaction_month)
+            transaction_year = convert_to_native(transaction_year)
+            transaction_dayofweek = convert_to_native(transaction_dayofweek)
             # Check if feature exists
             existing = self.get_by_id(customer_id)
             

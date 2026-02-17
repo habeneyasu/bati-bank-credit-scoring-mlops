@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 import uuid
+from pathlib import Path
 
 from src.utils.logging import get_logger
 from src.utils.config import settings
@@ -30,7 +31,7 @@ from src.database.repositories import (
 from sqlalchemy import and_, desc, or_
 from src.models.training import ModelTrainer
 from src.models.tracking import MLflowTracker
-from src.features.splitting import load_splits, DataSplitter
+from src.features.splitting import load_splits
 from src.monitoring.drift_detection import DriftDetector
 
 logger = get_logger(__name__)
@@ -399,7 +400,9 @@ class RetrainingPipeline:
                 self.logger.info(f"Starting retraining job {job_id}: {job.job_name}")
                 
                 # Load training data
-                splits_dir = settings.data_dir / "processed" / "splits"
+                # Use project root to construct data directory path
+                project_root = Path(__file__).parent.parent.parent
+                splits_dir = project_root / "data" / "processed" / "splits"
                 if not splits_dir.exists():
                     raise ValueError(f"Data splits directory not found: {splits_dir}")
                 

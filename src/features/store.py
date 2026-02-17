@@ -181,11 +181,24 @@ class FeatureStore:
             )
             
             # Process the data to generate features
+            # Note: For online serving, we may not have a fitted processor.
+            # The processor is mainly used for batch processing during training.
+            # For online serving, we compute features manually (RFM, temporal, aggregate).
+            processed_df = None
             try:
-                processed_df = processor.fit_transform(df)
+                # Try to transform if processor is already fitted
+                if processor.pipeline_ is not None:
+                    processed_df = processor.transform(df)
+                else:
+                    # If not fitted, fit_transform (but this may not work well on single customer)
+                    processed_df = processor.fit_transform(df)
             except Exception as e:
-                self.logger.warning(f"Feature processing error: {e}, using fallback", exc_info=True)
-                processed_df = df.copy()
+                self.logger.warning(
+                    f"Feature processing error: {e}, skipping processed features. "
+                    f"Using manually computed features (RFM, temporal, aggregate) instead.",
+                    exc_info=True
+                )
+                processed_df = None  # Will use fallback - manually computed features only
             
             # Calculate RFM features
             rfm_calc = RFMCalculator(
@@ -195,88 +208,338 @@ class FeatureStore:
             )
             
             rfm_features = None
+            rfm_values = {}
             try:
                 rfm_df = rfm_calc.calculate_rfm(df)
-                if 'recency_normalized' in rfm_df.columns:
-                    rfm_features = rfm_df[rfm_df['customer_id'] == customer_id].iloc[0] if len(rfm_df[rfm_df['customer_id'] == customer_id]) > 0 else None
+                if len(rfm_df) > 0:
+                    customer_rfm = rfm_df[rfm_df['customer_id'] == customer_id]
+                    if len(customer_rfm) > 0:
+                        rfm_features = customer_rfm.iloc[0]
+                        # Get raw RFM values
+                        rfm_values = {
+                            'recency': float(rfm_features.get('recency', 0)),
+                            'frequency': float(rfm_features.get('frequency', 0)),
+                            'monetary': float(rfm_features.get('monetary', 0))
+                        }
+                        # Normalize RFM (if normalized columns exist, use them; otherwise normalize here)
+                        # IMPORTANT: For online serving with single customer, we need to use fixed normalization ranges
+                        # to avoid normalizing each customer to 1.0. Use reasonable global ranges.
+                        
+                        # Fixed normalization ranges (based on typical credit scoring data)
+                        # These should match the ranges used during training
+                        RECENCY_MAX = 365.0  # 1 year max recency
+                        FREQUENCY_MAX = 1000.0  # Max transactions (matches normalize_count)
+                        MONETARY_MAX = 100000.0  # Max monetary value (matches normalize_amount)
+                        
+                        if 'recency_normalized' in rfm_features:
+                            rfm_values['recency_normalized'] = float(rfm_features.get('recency_normalized', 0))
+                        else:
+                            # Use fixed max for normalization (not per-customer max)
+                            # For recency: lower is better, so we normalize and invert
+                            # recency_normalized = 1 - (recency / RECENCY_MAX) clamped to [0, 1]
+                            recency_norm = 1.0 - min(1.0, rfm_values['recency'] / RECENCY_MAX) if RECENCY_MAX > 0 else 0.0
+                            rfm_values['recency_normalized'] = max(0.0, min(1.0, recency_norm))
+                            self.logger.debug(
+                                f"RFM normalization for {customer_id}: recency={rfm_values['recency']:.1f} days -> "
+                                f"normalized={rfm_values['recency_normalized']:.4f} (using fixed max={RECENCY_MAX})"
+                            )
+                        
+                        if 'frequency_normalized' in rfm_features:
+                            rfm_values['frequency_normalized'] = float(rfm_features.get('frequency_normalized', 0))
+                        else:
+                            # Use fixed max for normalization (not per-customer max)
+                            # For frequency: higher is better, so normalize directly
+                            frequency_norm = rfm_values['frequency'] / FREQUENCY_MAX if FREQUENCY_MAX > 0 else 0.0
+                            rfm_values['frequency_normalized'] = max(0.0, min(1.0, frequency_norm))
+                            self.logger.debug(
+                                f"RFM normalization for {customer_id}: frequency={rfm_values['frequency']:.0f} -> "
+                                f"normalized={rfm_values['frequency_normalized']:.4f} (using fixed max={FREQUENCY_MAX})"
+                            )
+                        
+                        if 'monetary_normalized' in rfm_features:
+                            rfm_values['monetary_normalized'] = float(rfm_features.get('monetary_normalized', 0))
+                        else:
+                            # Use fixed max for normalization (not per-customer max)
+                            # For monetary: higher is better, so normalize directly
+                            monetary_norm = rfm_values['monetary'] / MONETARY_MAX if MONETARY_MAX > 0 else 0.0
+                            rfm_values['monetary_normalized'] = max(0.0, min(1.0, monetary_norm))
+                            self.logger.debug(
+                                f"RFM normalization for {customer_id}: monetary={rfm_values['monetary']:.2f} -> "
+                                f"normalized={rfm_values['monetary_normalized']:.4f} (using fixed max={MONETARY_MAX})"
+                            )
             except Exception as e:
                 self.logger.warning(f"RFM calculation error: {e}", exc_info=True)
+                rfm_values = {'recency_normalized': 0.0, 'frequency_normalized': 0.0, 'monetary_normalized': 0.0}
             
-            # Extract feature vector from processed data
-            feature_vector = None
-            if len(processed_df) > 0:
-                customer_row = processed_df[processed_df['customer_id'] == customer_id]
-                if len(customer_row) > 0:
-                    # Get numeric columns (excluding customer_id and target if present)
-                    numeric_cols = customer_row.select_dtypes(include=[np.number]).columns.tolist()
-                    numeric_cols = [c for c in numeric_cols if c != 'customer_id' and 'target' not in c.lower()]
-                    
-                    if numeric_cols:
-                        feature_vector = customer_row[numeric_cols].iloc[0].values.tolist()
-                        # Ensure we have exactly 26 features (pad or truncate if needed)
-                        if len(feature_vector) < 26:
-                            feature_vector.extend([0.0] * (26 - len(feature_vector)))
-                        elif len(feature_vector) > 26:
-                            feature_vector = feature_vector[:26]
+            # Extract temporal features from transactions
+            first_txn = df.iloc[0] if len(df) > 0 else None
+            last_txn = df.iloc[-1] if len(df) > 0 else None
             
-            # If feature vector is still None, create a basic one from transaction stats
-            if feature_vector is None:
-                customer_stats = df.groupby('customer_id').agg({
-                    'amount': ['sum', 'mean', 'count', 'std'],
-                    'transaction_start_time': ['min', 'max']
-                }).reset_index()
-                
-                if len(customer_stats) > 0:
-                    stats = customer_stats.iloc[0]
-                    # Create basic feature vector (will be padded/truncated to 26)
-                    feature_vector = [
-                        float(stats.get(('amount', 'sum'), 0)),
-                        float(stats.get(('amount', 'mean'), 0)),
-                        float(stats.get(('amount', 'count'), 0)),
-                        float(stats.get(('amount', 'std'), 0) or 0),
-                    ]
-                    # Pad to 26 features
-                    feature_vector.extend([0.0] * (26 - len(feature_vector)))
+            temporal_features = {}
+            if first_txn is not None:
+                txn_time = first_txn['transaction_start_time']
+                if isinstance(txn_time, pd.Timestamp):
+                    temporal_features = {
+                        'transaction_hour': float(txn_time.hour) / 23.0,  # Normalize to 0-1
+                        'transaction_day': float(txn_time.day) / 31.0,  # Normalize to 0-1
+                        'transaction_month': float(txn_time.month) / 12.0,  # Normalize to 0-1
+                        'transaction_year': float(txn_time.year - 2019) / 10.0 if txn_time.year >= 2019 else 0.0,  # Normalize
+                        'transaction_dayofweek': float(txn_time.dayofweek) / 6.0,  # Normalize to 0-1
+                    }
                 else:
-                    feature_vector = [0.0] * 26
-            
-            # Extract temporal features from first transaction
-            first_txn = df.iloc[0]
-            txn_time = first_txn['transaction_start_time']
-            if isinstance(txn_time, pd.Timestamp):
-                transaction_hour = float(txn_time.hour)
-                transaction_day = float(txn_time.day)
-                transaction_month = float(txn_time.month)
-                transaction_year = float(txn_time.year)
-                transaction_dayofweek = float(txn_time.dayofweek)
+                    temporal_features = {'transaction_hour': 0.0, 'transaction_day': 0.0, 'transaction_month': 0.0, 
+                                       'transaction_year': 0.0, 'transaction_dayofweek': 0.0}
             else:
-                transaction_hour = transaction_day = transaction_month = transaction_year = transaction_dayofweek = None
+                temporal_features = {'transaction_hour': 0.0, 'transaction_day': 0.0, 'transaction_month': 0.0, 
+                                   'transaction_year': 0.0, 'transaction_dayofweek': 0.0}
             
-            # Prepare aggregate features
+            # Helper function to clamp values to DECIMAL(10,6) range: -9999.999999 to 9999.999999
+            def clamp_decimal(value, min_val=-9999.999999, max_val=9999.999999):
+                """Clamp value to DECIMAL(10,6) range."""
+                if value is None or (isinstance(value, float) and (np.isnan(value) or np.isinf(value))):
+                    return 0.0
+                return max(min_val, min(max_val, float(value)))
+            
+            # Helper function to normalize large values (e.g., amounts) to 0-1 range
+            def normalize_amount(value, max_amount=100000.0):
+                """Normalize amount values to 0-1 range for feature vector."""
+                if value is None or (isinstance(value, float) and (np.isnan(value) or np.isinf(value))):
+                    return 0.0
+                normalized = float(value) / max_amount if max_amount > 0 else 0.0
+                return clamp_decimal(normalized, 0.0, 1.0)
+            
+            # Helper function to normalize count values
+            def normalize_count(value, max_count=1000.0):
+                """Normalize count values to 0-1 range for feature vector."""
+                if value is None or (isinstance(value, float) and (np.isnan(value) or np.isinf(value))):
+                    return 0.0
+                normalized = float(value) / max_count if max_count > 0 else 0.0
+                return clamp_decimal(normalized, 0.0, 1.0)
+            
+            # Calculate aggregate/statistical features from transactions
+            # Note: These are normalized for the feature_vector (0-1 range), but raw values stored in metadata
+            aggregate_features_list = []
+            if len(df) > 0:
+                # Get raw statistics for metadata
+                total_amount = float(df['amount'].sum())
+                avg_amount = float(df['amount'].mean())
+                std_amount = float(df['amount'].std() if len(df) > 1 else 0.0)
+                min_amount = float(df['amount'].min())
+                max_amount = float(df['amount'].max())
+                median_amount = float(df['amount'].median())
+                transaction_count = float(len(df))
+                
+                # Normalize for feature vector (DECIMAL(10,6) compatible)
+                aggregate_features_list.extend([
+                    normalize_amount(total_amount),  # Normalized total amount
+                    normalize_amount(avg_amount),  # Normalized average amount
+                    normalize_amount(std_amount),  # Normalized std deviation
+                    normalize_amount(min_amount),  # Normalized min amount
+                    normalize_amount(max_amount),  # Normalized max amount
+                    normalize_amount(median_amount),  # Normalized median amount
+                    normalize_count(transaction_count),  # Normalized transaction count
+                ])
+                
+                # Time-based features (normalized)
+                if last_txn is not None and first_txn is not None:
+                    time_diff = (pd.to_datetime(last_txn['transaction_start_time']) - 
+                               pd.to_datetime(first_txn['transaction_start_time'])).days
+                    aggregate_features_list.append(normalize_count(time_diff, max_count=365.0))  # Normalized days
+                else:
+                    aggregate_features_list.append(0.0)
+                
+                # Amount distribution features (normalized)
+                if len(df) > 1:
+                    q25 = float(df['amount'].quantile(0.25))
+                    q75 = float(df['amount'].quantile(0.75))
+                    iqr = q75 - q25
+                    aggregate_features_list.extend([
+                        normalize_amount(q25),
+                        normalize_amount(q75),
+                        normalize_amount(iqr)
+                    ])
+                else:
+                    aggregate_features_list.extend([0.0, 0.0, 0.0])
+                
+                # Transaction frequency features (normalized)
+                if len(df) > 1 and last_txn is not None and first_txn is not None:
+                    time_span = (pd.to_datetime(last_txn['transaction_start_time']) - 
+                                pd.to_datetime(first_txn['transaction_start_time'])).days
+                    if time_span > 0:
+                        transactions_per_day = len(df) / time_span
+                        aggregate_features_list.append(clamp_decimal(transactions_per_day, 0.0, 100.0))  # Cap at 100
+                    else:
+                        aggregate_features_list.append(normalize_count(len(df)))
+                else:
+                    aggregate_features_list.append(normalize_count(len(df)))
+            else:
+                aggregate_features_list = [0.0] * 11
+            
+            # Extract processed features from DataProcessor output
+            processed_features_list = []
+            if processed_df is not None and len(processed_df) > 0:
+                try:
+                    customer_row = processed_df[processed_df['customer_id'] == customer_id]
+                    if len(customer_row) > 0:
+                        # Get numeric columns (excluding customer_id and target if present)
+                        numeric_cols = customer_row.select_dtypes(include=[np.number]).columns.tolist()
+                        numeric_cols = [c for c in numeric_cols if c not in ['customer_id'] and 'target' not in c.lower()]
+                    
+                        # Get processed features (limit to avoid too many)
+                        if numeric_cols:
+                            processed_values = customer_row[numeric_cols].iloc[0].values.tolist()
+                            # Convert NumPy types to native Python types and clamp to DECIMAL(10,6)
+                            processed_features_list = []
+                            for v in processed_values[:7]:
+                                if isinstance(v, (np.floating, np.integer, np.number)):
+                                    val = float(v)
+                                else:
+                                    val = float(v) if isinstance(v, (int, float)) else 0.0
+                                # Clamp to DECIMAL(10,6) range
+                                if np.isnan(val) or np.isinf(val):
+                                    processed_features_list.append(0.0)
+                                else:
+                                    processed_features_list.append(max(-9999.999999, min(9999.999999, val)))
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error extracting processed features for customer {customer_id}: {e}. "
+                        f"Using zeros for processed features.",
+                        exc_info=True
+                    )
+                    processed_features_list = []
+            
+            # If no processed features, fill with zeros (we have RFM, temporal, and aggregate features)
+            if not processed_features_list:
+                processed_features_list = [0.0] * 7
+            
+            # Combine all features into 26-feature vector
+            # Order: RFM (3) + Temporal (5) + Aggregate (11) + Processed (7) = 26
+            feature_vector = []
+            
+            # 1. RFM features (3) - clamp to ensure within DECIMAL(10,6) range
+            rfm_recency = clamp_decimal(rfm_values.get('recency_normalized', 0.0), 0.0, 1.0)
+            rfm_frequency = clamp_decimal(rfm_values.get('frequency_normalized', 0.0), 0.0, 1.0)
+            rfm_monetary = clamp_decimal(rfm_values.get('monetary_normalized', 0.0), 0.0, 1.0)
+            
+            # Log RFM values for debugging
+            self.logger.info(
+                f"Feature vector construction for {customer_id}: "
+                f"RFM=[recency={rfm_values.get('recency', 0):.1f}->{rfm_recency:.4f}, "
+                f"frequency={rfm_values.get('frequency', 0):.0f}->{rfm_frequency:.4f}, "
+                f"monetary={rfm_values.get('monetary', 0):.2f}->{rfm_monetary:.4f}], "
+                f"transaction_count={len(df)}"
+            )
+            
+            feature_vector.extend([rfm_recency, rfm_frequency, rfm_monetary])
+            
+            # 2. Temporal features (5) - clamp to ensure within DECIMAL(10,6) range
+            feature_vector.extend([
+                clamp_decimal(temporal_features.get('transaction_hour', 0.0), 0.0, 1.0),
+                clamp_decimal(temporal_features.get('transaction_day', 0.0), 0.0, 1.0),
+                clamp_decimal(temporal_features.get('transaction_month', 0.0), 0.0, 1.0),
+                clamp_decimal(temporal_features.get('transaction_year', 0.0), 0.0, 1.0),
+                clamp_decimal(temporal_features.get('transaction_dayofweek', 0.0), 0.0, 1.0)
+            ])
+            
+            # 3. Aggregate features (11)
+            feature_vector.extend(aggregate_features_list[:11])
+            
+            # 4. Processed features (7) - fill remaining slots
+            feature_vector.extend(processed_features_list[:7])
+            
+            # Ensure exactly 26 features (pad if needed, truncate if too many)
+            if len(feature_vector) < 26:
+                feature_vector.extend([0.0] * (26 - len(feature_vector)))
+            elif len(feature_vector) > 26:
+                feature_vector = feature_vector[:26]
+            
+            # Convert all NumPy types to native Python types and clamp to DECIMAL(10,6) range
+            # (clamp_decimal function already defined above)
+            feature_vector = [clamp_decimal(v) for v in feature_vector]
+            
+            # Extract temporal features for metadata (non-normalized, but clamped to DECIMAL(10,6))
+            def clamp_temporal(value):
+                """Clamp temporal value to DECIMAL(10,6) range."""
+                if value is None:
+                    return None
+                try:
+                    val = float(value)
+                    if np.isnan(val) or np.isinf(val) or val <= 0:
+                        return None
+                    clamped = max(-9999.999999, min(9999.999999, val))
+                    return clamped if clamped > 0 else None
+                except (ValueError, TypeError):
+                    return None
+            
+            # Calculate temporal metadata values and clamp them
+            hour_val = temporal_features.get('transaction_hour', 0.0) * 23.0 if temporal_features.get('transaction_hour', 0.0) > 0 else None
+            day_val = temporal_features.get('transaction_day', 0.0) * 31.0 if temporal_features.get('transaction_day', 0.0) > 0 else None
+            month_val = temporal_features.get('transaction_month', 0.0) * 12.0 if temporal_features.get('transaction_month', 0.0) > 0 else None
+            year_val = 2019 + (temporal_features.get('transaction_year', 0.0) * 10.0) if temporal_features.get('transaction_year', 0.0) > 0 else None
+            dayofweek_val = temporal_features.get('transaction_dayofweek', 0.0) * 6.0 if temporal_features.get('transaction_dayofweek', 0.0) > 0 else None
+            
+            transaction_hour = clamp_temporal(hour_val)
+            transaction_day = clamp_temporal(day_val)
+            transaction_month = clamp_temporal(month_val)
+            transaction_year = clamp_temporal(year_val)
+            transaction_dayofweek = clamp_temporal(dayofweek_val)
+            
+            # Prepare aggregate features for metadata
             aggregate_features = {
-                "total_transactions": int(len(df)),
-                "total_amount": float(df['amount'].sum()),
-                "avg_amount": float(df['amount'].mean()),
-                "min_amount": float(df['amount'].min()),
-                "max_amount": float(df['amount'].max()),
+                "total_transactions": int(len(df)) if len(df) > 0 else 0,
+                "total_amount": float(df['amount'].sum()) if len(df) > 0 else 0.0,
+                "avg_amount": float(df['amount'].mean()) if len(df) > 0 else 0.0,
+                "min_amount": float(df['amount'].min()) if len(df) > 0 else 0.0,
+                "max_amount": float(df['amount'].max()) if len(df) > 0 else 0.0,
             }
             
-            # Prepare result
+            # Convert all numeric values to native Python types and clamp to DECIMAL(10,6) range
+            def convert_to_native(value):
+                """Convert NumPy/pandas types to native Python types and clamp to DECIMAL(10,6)."""
+                if value is None:
+                    return None
+                if isinstance(value, (np.floating, np.float64, np.float32)):
+                    val = float(value)
+                elif isinstance(value, (np.integer, np.int64, np.int32)):
+                    val = float(int(value))
+                else:
+                    try:
+                        if pd.isna(value):
+                            return None
+                    except (TypeError, ValueError):
+                        pass
+                    val = float(value) if isinstance(value, (int, float)) else value
+                
+                # Clamp to DECIMAL(10,6) range: -9999.999999 to 9999.999999
+                if isinstance(val, (int, float)):
+                    if np.isnan(val) or np.isinf(val):
+                        return 0.0
+                    return max(-9999.999999, min(9999.999999, float(val)))
+                return val
+            
+            # Prepare result with all values converted to native types
             result = {
                 "customer_id": customer_id,
-                "feature_vector": feature_vector,
-                "recency_normalized": float(rfm_features['recency_normalized']) if rfm_features is not None and 'recency_normalized' in rfm_features else None,
-                "frequency_normalized": float(rfm_features['frequency_normalized']) if rfm_features is not None and 'frequency_normalized' in rfm_features else None,
-                "monetary_normalized": float(rfm_features['monetary_normalized']) if rfm_features is not None and 'monetary_normalized' in rfm_features else None,
-                "transaction_hour": transaction_hour,
-                "transaction_day": transaction_day,
-                "transaction_month": transaction_month,
-                "transaction_year": transaction_year,
-                "transaction_dayofweek": transaction_dayofweek,
+                "feature_vector": feature_vector,  # Already converted above
+                "recency_normalized": convert_to_native(rfm_values.get('recency_normalized', 0.0)),
+                "frequency_normalized": convert_to_native(rfm_values.get('frequency_normalized', 0.0)),
+                "monetary_normalized": convert_to_native(rfm_values.get('monetary_normalized', 0.0)),
+                "transaction_hour": convert_to_native(transaction_hour),
+                "transaction_day": convert_to_native(transaction_day),
+                "transaction_month": convert_to_native(transaction_month),
+                "transaction_year": convert_to_native(transaction_year),
+                "transaction_dayofweek": convert_to_native(transaction_dayofweek),
                 "aggregate_features": aggregate_features,
                 "categorical_features": {},
                 "feature_version": feature_version or "v1.0",
-                "data_version": data_version
+                "data_version": data_version,
+                "feature_breakdown": {
+                    "rfm_features": 3,
+                    "temporal_features": 5,
+                    "aggregate_features": 11,
+                    "processed_features": 7,
+                    "total": len(feature_vector)
+                }
             }
             
             # Store features if requested

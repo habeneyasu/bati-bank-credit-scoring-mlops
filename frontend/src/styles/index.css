@@ -3,14 +3,59 @@
 @tailwind utilities;
 
 @layer base {
+  * {
+    @apply box-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
   body {
     @apply bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen;
+    @apply antialiased;
+    @apply font-sans;
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    @apply min-h-screen;
   }
 }
 
 @layer components {
   .card {
-    @apply bg-white rounded-xl shadow-lg border border-slate-200 p-6 transition-all duration-300 hover:shadow-xl;
+    @apply bg-white rounded-xl shadow-lg border border-slate-200 p-6 lg:p-8 transition-all duration-300 hover:shadow-xl;
+    @apply mb-6;
+  }
+
+  .card:last-child {
+    @apply mb-0;
+  }
+
+  /* Professional spacing for containers */
+  .container-padding {
+    @apply px-4 sm:px-6 lg:px-8 xl:px-10;
+  }
+
+  .section-padding {
+    @apply px-4 sm:px-6 lg:px-8;
+  }
+  
+  .section-spacing {
+    @apply space-y-8;
+  }
+
+  .content-spacing {
+    @apply space-y-6;
+  }
+
+  .grid-spacing {
+    @apply gap-6;
   }
   
   .btn-primary {

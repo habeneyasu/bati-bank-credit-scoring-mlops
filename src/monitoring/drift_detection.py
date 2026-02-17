@@ -522,3 +522,165 @@ class DriftMonitor:
             "model_version": model_version,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+    
+    def monitor_prediction_clustering(
+        self,
+        predictions: np.ndarray,
+        probability_range_threshold: float = 0.1,
+        min_samples: int = 50
+    ) -> Dict[str, Any]:
+        """
+        Monitor for prediction clustering issues.
+        
+        Detects when all predictions are clustered in a narrow range,
+        which indicates model bias or calibration issues.
+        
+        This addresses the issue where all customers get similar probabilities
+        (e.g., all between 17-23%), suggesting the model is not differentiating
+        between customers properly.
+        
+        Args:
+            predictions: Array of prediction probabilities
+            probability_range_threshold: Alert if range < threshold (default: 0.1 = 10%)
+            min_samples: Minimum number of samples required for analysis
+            
+        Returns:
+            Dictionary with clustering analysis results
+        """
+        if len(predictions) < min_samples:
+            return {
+                "clustering_detected": False,
+                "message": f"Insufficient samples ({len(predictions)} < {min_samples})",
+                "sample_count": len(predictions)
+            }
+        
+        # Clean predictions
+        clean_preds = predictions[np.isfinite(predictions)]
+        
+        if len(clean_preds) < min_samples:
+            return {
+                "clustering_detected": False,
+                "message": f"Insufficient valid samples ({len(clean_preds)} < {min_samples})",
+                "sample_count": len(clean_preds)
+            }
+        
+        # Calculate statistics
+        prob_min = float(np.min(clean_preds))
+        prob_max = float(np.max(clean_preds))
+        prob_range = prob_max - prob_min
+        prob_mean = float(np.mean(clean_preds))
+        prob_std = float(np.std(clean_preds))
+        prob_median = float(np.median(clean_preds))
+        
+        # Calculate percentiles
+        prob_q25 = float(np.percentile(clean_preds, 25))
+        prob_q75 = float(np.percentile(clean_preds, 75))
+        prob_iqr = prob_q75 - prob_q25
+        
+        # Check for clustering
+        clustering_detected = prob_range < probability_range_threshold
+        
+        # Determine severity
+        if prob_range < 0.05:  # Less than 5% range
+            severity = "critical"
+        elif prob_range < 0.1:  # Less than 10% range
+            severity = "major"
+        elif prob_range < 0.15:  # Less than 15% range
+            severity = "minor"
+        else:
+            severity = "none"
+        
+        # Check if all predictions are in low-risk range
+        risk_threshold_low = 0.30  # Default from settings
+        all_low_risk = prob_max < risk_threshold_low
+        
+        # Check if all predictions are in high-risk range
+        risk_threshold_high = 0.60  # Default from settings
+        all_high_risk = prob_min > risk_threshold_high
+        
+        # Calculate coefficient of variation (std/mean) - low CV indicates clustering
+        cv = prob_std / prob_mean if prob_mean > 0 else 0.0
+        
+        return {
+            "clustering_detected": clustering_detected,
+            "severity": severity,
+            "statistics": {
+                "count": len(clean_preds),
+                "mean": prob_mean,
+                "std": prob_std,
+                "min": prob_min,
+                "max": prob_max,
+                "range": prob_range,
+                "median": prob_median,
+                "q25": prob_q25,
+                "q75": prob_q75,
+                "iqr": prob_iqr,
+                "coefficient_of_variation": cv
+            },
+            "risk_analysis": {
+                "all_low_risk": all_low_risk,
+                "all_high_risk": all_high_risk,
+                "low_risk_threshold": risk_threshold_low,
+                "high_risk_threshold": risk_threshold_high,
+                "low_risk_count": int(np.sum(clean_preds < risk_threshold_low)),
+                "medium_risk_count": int(np.sum((clean_preds >= risk_threshold_low) & (clean_preds <= risk_threshold_high))),
+                "high_risk_count": int(np.sum(clean_preds > risk_threshold_high))
+            },
+            "recommendations": self._generate_clustering_recommendations(
+                clustering_detected, severity, all_low_risk, all_high_risk, prob_range
+            ),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    def _generate_clustering_recommendations(
+        self,
+        clustering_detected: bool,
+        severity: str,
+        all_low_risk: bool,
+        all_high_risk: bool,
+        prob_range: float
+    ) -> List[str]:
+        """Generate recommendations based on clustering analysis."""
+        recommendations = []
+        
+        if clustering_detected:
+            recommendations.append(
+                f"Prediction clustering detected (range: {prob_range:.4f}). "
+                "Model may not be differentiating between customers properly."
+            )
+            
+            if severity == "critical":
+                recommendations.append(
+                    "CRITICAL: Very narrow probability range. "
+                    "Model likely has calibration or training issues."
+                )
+            
+            if all_low_risk:
+                recommendations.append(
+                    "All predictions are in LOW risk range. "
+                    "Possible causes: model bias, class imbalance in training, or feature engineering issues."
+                )
+                recommendations.append(
+                    "Action: Review model training data for class imbalance. "
+                    "Consider retraining with balanced data or applying class weights."
+                )
+            
+            if all_high_risk:
+                recommendations.append(
+                    "All predictions are in HIGH risk range. "
+                    "Model may be overly conservative or trained on biased data."
+                )
+            
+            recommendations.append(
+                "Action: Run diagnostic scripts to identify root cause: "
+                "scripts/diagnose_scoring.py and scripts/review_model_training.py"
+            )
+            
+            if severity in ["critical", "major"]:
+                recommendations.append(
+                    "Action: Consider model recalibration using scripts/recalibrate_model.py"
+                )
+        else:
+            recommendations.append("No clustering detected - predictions show good diversity")
+        
+        return recommendations

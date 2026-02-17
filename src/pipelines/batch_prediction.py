@@ -213,7 +213,10 @@ class BatchOutputWriter:
         job_id: int
     ) -> Dict[str, Any]:
         """Write results to file."""
-        output_dir = Path(output_config.get("output_dir", settings.data_dir / "batch_predictions"))
+        # Use project root to construct data directory path
+        project_root = Path(__file__).parent.parent.parent
+        default_output_dir = project_root / "data" / "batch_predictions"
+        output_dir = Path(output_config.get("output_dir", str(default_output_dir)))
         output_dir.mkdir(parents=True, exist_ok=True)
         
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
