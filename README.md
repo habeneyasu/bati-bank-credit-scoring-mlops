@@ -32,9 +32,9 @@
 ## 📑 Table of Contents
 
 - [📖 The Story](#-the-story)
-  - [The Problem: Breaking the Credit History Barrier](#the-problem-breaking-the-credit-history-barrier)
-  - [The Solution: Behavioral Intelligence Meets Production MLOps](#the-solution-behavioral-intelligence-meets-production-mlops)
-  - [The Impact: Transforming Business Outcomes](#the-impact-transforming-business-outcomes)
+  - The Problem: Breaking the Credit History Barrier
+  - The Solution: Behavioral Intelligence Meets Production MLOps
+  - The Impact: Transforming Business Outcomes
 - [✨ Recent Updates](#-recent-updates)
 - [🎯 What's Been Built](#-whats-been-built-a-production-grade-mlops-platform)
 - [🚀 Quick Start](#-quick-start)
